@@ -1,6 +1,8 @@
 [package]
-name = "pacman-repo-tools"
-version = "0.1.0"
-authors = ["Maarten de Vries <maarten@de-vri.es>"]
+name        = "pacman-repo-tools"
+description = "pacman repository management tools"
+version     = "0.1.0"
+license     = "BSD-2-Clause"
+authors     = ["Maarten de Vries <maarten@de-vri.es>"]
 
 [dependencies]
