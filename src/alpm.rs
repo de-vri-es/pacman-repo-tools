@@ -22,33 +22,58 @@
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 use std::collections::BTreeMap;
-use std::collections::btree_map::{Entry};
-use std::mem;
 
-pub fn parse_dict<'a>(blob: &'a str) -> Result<BTreeMap<&'a str, Vec<&'a str>>, String> {
-	let mut result = BTreeMap::<&str, Vec<&str>>::new();
-	let mut key: Option<&'a str> = None;
-	let mut values = Vec::<&'a str>::new();
+use util::ConsumableStr;
 
-	for (i, line) in blob.split('\n').enumerate() {
-		let line = line.trim();
-		if line.is_empty() { continue }
+#[derive(Debug, Eq, PartialEq, Ord, PartialOrd)]
+pub struct ParseError<'a> {
+	pub line_nr: usize,
+	pub message: String,
+	pub token: &'a str,
+}
 
-		if line.starts_with('%') && line.ends_with('%') {
-			if let Some(key) = key {
-				match result.entry(key) {
-					Entry::Vacant(mut entry)   => { entry.insert(mem::replace(&mut values, Vec::new())); },
-					Entry::Occupied(mut entry) => { entry.get_mut().append(&mut values); },
-				}
+impl<'a> ParseError<'a> {
+	fn new<T: Into<String>>(line_nr: usize, token: &'a str, message: T) -> ParseError {
+		ParseError{line_nr, message: message.into(), token}
+	}
+}
+
+fn parse_key(line: &str) -> Option<&str> {
+	let mut line = line;
+	if line.consume_front_n(1) == Some("%") && line.consume_back_n(1) == Some("%") {
+		Some(line)
+	} else {
+		None
+	}
+}
+
+pub fn parse_dict<'a>(blob: &'a str) -> Result<BTreeMap<&'a str, Vec<&'a str>>, ParseError<'a>> {
+	// Iterator over trimmed lines, skipping empty lines.
+	let mut lines  = blob.split('\n').map(|x| x.trim()).enumerate().filter(|&(_, x)| !x.is_empty());
+
+	// Parse a key from the first line.
+	let mut key = match lines.next() {
+		None            => return Ok(BTreeMap::default()),
+		Some((i, line)) => parse_key(line).ok_or(ParseError::new(i, line, "expected first non-empty line to be a key in the format %NAME%"))?,
+	};
+
+	// Loop until all lines are processed.
+	let mut result = BTreeMap::new();
+	'key: loop {
+		// Make sure we have a vector to push values to.
+		let values = result.entry(key).or_insert(Vec::default());
+
+		// Loop over value lines.
+		for (_, line) in &mut lines {
+			// If a key is found, continue the outer loop.
+			if let Some(new_key) = parse_key(line) {
+				key = new_key;
+				continue 'key;
 			}
-			key = Some(&line[1..line.len()-2]);
-		} else {
-			if key.is_none() {
-				return Err(format!("got value without key on line {}", i));
-			}
-			values.push(line.into());
+			values.push(line);
 		}
+		break;
 	}
 
-	return Ok(result);
+	Ok(result)
 }
