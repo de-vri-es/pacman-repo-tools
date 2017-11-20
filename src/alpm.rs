@@ -77,3 +77,54 @@ pub fn parse_dict<'a>(blob: &'a str) -> Result<BTreeMap<&'a str, Vec<&'a str>>, 
 
 	Ok(result)
 }
+
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	#[test]
+	fn simple() {
+		let blob = ["%FOO%", "aap", "noot", "mies"].join("\n");
+		assert_eq!(parse_dict(blob.as_ref()), Ok(btreemap!{"FOO" => vec!["aap", "noot", "mies"]}));
+	}
+
+	#[test]
+	fn lines_are_trimmed() {
+		let blob = ["  %FOO%  ", "    aap  ", "   noot", "mies  "].join("\n");
+		assert_eq!(parse_dict(blob.as_ref()), Ok(btreemap!{"FOO" => vec!["aap", "noot", "mies"]}));
+	}
+
+	#[test]
+	fn empty_lines_are_ignored() {
+		let blob = ["", "", "", "%FOO%", "", "", "", "aap", "", "noot", "mies", "", ""].join("\n");
+		assert_eq!(parse_dict(blob.as_ref()), Ok(btreemap!{"FOO" => vec!["aap", "noot", "mies"]}));
+	}
+
+	#[test]
+	fn multiple_keys() {
+		let blob = [
+			"%FOO%", "aap", "noot", "mies",
+			"%BAR%", "wim", "zus", "jet",
+		].join("\n");
+		assert_eq!(parse_dict(blob.as_ref()), Ok(btreemap!{
+			"FOO" => vec!["aap", "noot", "mies"],
+			"BAR" => vec!["wim", "zus", "jet"]
+		}));
+	}
+
+	#[test]
+	fn keys_can_be_reopened() {
+		let blob = [
+			"%FOO%", "aap", "noot",
+			"%BAR%", "wim",
+			"%FOO%", "mies",
+			"%BAR%", "zus",
+			"%BAR%", "jet",
+		].join("\n");
+		assert_eq!(parse_dict(blob.as_ref()), Ok(btreemap!{
+			"FOO" => vec!["aap", "noot", "mies"],
+			"BAR" => vec!["wim", "zus", "jet"]
+		}));
+	}
+}

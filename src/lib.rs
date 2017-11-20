@@ -23,6 +23,9 @@
 
 #![feature(pattern)]
 
+#[macro_use(btreemap)]
+extern crate maplit;
+
 pub mod alpm;
 pub mod package;
 pub mod srcinfo;
