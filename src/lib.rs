@@ -23,12 +23,13 @@
 
 #![feature(pattern)]
 
-#[macro_use(btreemap)]
-extern crate maplit;
-
 pub mod alpm;
 pub mod package;
 pub mod srcinfo;
 pub mod version;
 
 mod util;
+
+#[cfg(test)]
+#[macro_use(btreemap)]
+extern crate maplit;
