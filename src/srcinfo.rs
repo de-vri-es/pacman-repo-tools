@@ -21,25 +21,28 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-use std::collections::BTreeMap;
-
+use error::ParseError;
 use util::ConsumableStr;
 
-pub fn parse_dict(blob: &str) -> Result<BTreeMap<String, Vec<String>>, String> {
-	let mut result = BTreeMap::<String, Vec<String>>::new();
-
-	for (i, line) in blob.split('\n').enumerate() {
+/// Iterate over key,value pairs in an INFO blob.
+///
+/// INFO blobs consist of 'key = value' lines.
+/// All whitespace around keys or values is removed.
+///
+/// Empty lines are yielded as `None`.
+/// Data lines are yielded as `Some((&str, &str))`.
+pub fn iterate_info<'a>(blob: &'a str) -> impl Iterator<Item = Result<Option<(&'a str, &'a str)>, ParseError>> {
+	blob.split('\n').enumerate().map(|(i, line)| {
 		let line = line.trim();
-		if line.is_empty() { continue }
-
-		if let Some((name, _, value)) = line.partition('=') {
-			let name = name.trim();
-			let value = value.trim().into();
-			result.entry(name.into()).or_insert_with(|| Vec::<String>::new()).push(value);
-		} else {
-			return Err(format!("expected `=` on line {}", i))
+		if line.is_empty() {
+			return Ok(None);
 		}
-	}
+		line.partition('=').map(|(key, _, value)| Some((key.trim(), value.trim())))
+		.ok_or_else(|| ParseError::new(i, line, "expected 'key = value' or empty line"))
+	})
+}
 
-	return Ok(result);
+#[cfg(test)]
+mod tests {
+
 }

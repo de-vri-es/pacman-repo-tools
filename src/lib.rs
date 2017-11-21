@@ -22,6 +22,7 @@
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #![feature(pattern)]
+#![feature(conservative_impl_trait)]
 
 pub mod alpm;
 pub mod package;
