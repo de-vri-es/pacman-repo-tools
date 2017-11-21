@@ -27,6 +27,7 @@ pub mod alpm;
 pub mod package;
 pub mod srcinfo;
 pub mod version;
+pub mod error;
 
 mod util;
 
