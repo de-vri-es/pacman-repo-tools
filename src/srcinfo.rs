@@ -44,5 +44,41 @@ pub fn iterate_info<'a>(blob: &'a str) -> impl Iterator<Item = Result<Option<(&'
 
 #[cfg(test)]
 mod tests {
+	use super::*;
+
+	#[test]
+	fn test_simple() {
+		let blob = ["a=b", "c=d"].join("\n");
+		let mut iterator = iterate_info(blob.as_ref());
+		assert_eq!(iterator.next(), Some(Ok(Some(("a", "b")))));
+		assert_eq!(iterator.next(), Some(Ok(Some(("c", "d")))));
+		assert_eq!(iterator.next(), None);
+	}
+
+	#[test]
+	fn spaces_are_stripped() {
+		let mut iterator = iterate_info(" a   =    b  ");
+		assert_eq!(iterator.next(), Some(Ok(Some(("a", "b")))));
+		assert_eq!(iterator.next(), None);
+	}
+
+	#[test]
+	fn empty_lines_are_none() {
+		let blob = ["  ", "a=b", "", "c=d", ""].join("\n");
+		let mut iterator = iterate_info(blob.as_ref());
+		assert_eq!(iterator.next(), Some(Ok(None)));
+		assert_eq!(iterator.next(), Some(Ok(Some(("a", "b")))));
+		assert_eq!(iterator.next(), Some(Ok(None)));
+		assert_eq!(iterator.next(), Some(Ok(Some(("c", "d")))));
+		assert_eq!(iterator.next(), Some(Ok(None)));
+		assert_eq!(iterator.next(), None);
+	}
+
+	#[test]
+	fn garbage_gives_error() {
+		let mut iterator = iterate_info("ab");
+		assert!(iterator.next().unwrap().is_err());
+		assert_eq!(iterator.next(), None);
+	}
 
 }
