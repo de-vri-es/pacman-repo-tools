@@ -31,7 +31,7 @@ use util::ConsumableStr;
 ///
 /// Empty lines are yielded as `None`.
 /// Data lines are yielded as `Some((&str, &str))`.
-pub fn iterate_info<'a>(blob: &'a str) -> impl Iterator<Item = Result<Option<(&'a str, &'a str)>, ParseError>> {
+pub fn iterate_info<'a>(blob: &'a str) -> impl Iterator<Item = Result<Option<(&'a str, &'a str)>, ParseError<'a>>> {
 	blob.split('\n').enumerate().map(|(i, line)| {
 		let line = line.trim();
 		if line.is_empty() {
