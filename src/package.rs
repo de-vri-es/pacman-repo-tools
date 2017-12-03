@@ -20,3 +20,28 @@
 // CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+use version::Version;
+
+pub enum Constraint {
+	GreaterEqual,
+	LessEqual,
+	Equal,
+	Greater,
+	Less,
+}
+
+pub struct Dependency {
+	pub name: String,
+	pub version: Option<(Constraint, Version)>,
+}
+
+pub struct VersionedTarget {
+	pub name: String,
+	pub version: Version,
+}
+
+pub struct Package {
+	pub name: String,
+	pub version: Version,
+}
