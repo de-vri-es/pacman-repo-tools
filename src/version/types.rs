@@ -31,21 +31,21 @@ pub struct VersionParts<'a> {
 	pub pkgrel: Option<VersionStr<'a>>,
 }
 
-// Conversions to/from VersionString and string.
+// Conversions to/from VersionString and String.
 impl From<String> for VersionString { fn from(s: String) -> VersionString {VersionString(s)}}
 impl Into<String> for VersionString { fn into(self) -> String {self.0}}
 
 // Conversions to/from VersionString and str.
-impl<'a> From<&'a str> for VersionString { fn from(s: &'a str) -> VersionString {VersionString(s.into())}}
+impl<'a> From<&'a str> for     VersionString { fn from(s: &'a str) -> VersionString {VersionString(s.into())}}
 impl<'a> Into<&'a str> for &'a VersionString { fn into(self) -> &'a str {self.0.as_ref()}}
-
-// Conversions to/from VersionString and VersionStr.
-impl<'a> From<VersionStr<'a>> for VersionString { fn from(s: VersionStr<'a>) -> VersionString {VersionString(s.0.into())}}
-impl<'a> Into<VersionStr<'a>> for &'a VersionString { fn into(self) -> VersionStr<'a> {VersionStr(self.0.as_ref())}}
 
 // Conversions to/from VersionStr and str.
 impl<'a> From<&'a str> for VersionStr<'a> { fn from(s: &'a str) -> VersionStr<'a> {VersionStr(s)}}
 impl<'a> Into<&'a str> for VersionStr<'a> { fn into(self) -> &'a str {self.0}}
+
+// Conversions to/from VersionString and VersionStr.
+impl<'a> Into<VersionString>  for VersionStr<'a>    { fn into(self) -> VersionString  {VersionString(self.0.into())}}
+impl<'a> Into<VersionStr<'a>> for &'a VersionString { fn into(self) -> VersionStr<'a> {VersionStr(self.0.as_ref())}}
 
 // Conversion from VersionParts to Version.
 impl<'a> Into<Version> for VersionParts<'a> { fn into(self) -> Version {
