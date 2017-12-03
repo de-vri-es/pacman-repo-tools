@@ -21,19 +21,16 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+use std::collections::BTreeMap as Map;
+
 use version::Version;
 
 pub enum Constraint {
-	GreaterEqual,
-	LessEqual,
 	Equal,
 	Greater,
+	GreaterEqual,
 	Less,
-}
-
-pub struct Dependency {
-	pub name: String,
-	pub version: Option<(Constraint, Version)>,
+	LessEqual,
 }
 
 pub struct VersionedTarget {
@@ -42,6 +39,21 @@ pub struct VersionedTarget {
 }
 
 pub struct Package {
-	pub name: String,
-	pub version: Version,
+	pub name:          String,
+	pub version:       Version,
+
+	pub url:           String,
+	pub description:   String,
+	pub licenses:      Vec<String>,
+
+	pub groups:        Vec<String>,
+	pub backup:        Vec<String>,
+
+	pub provides:      Map<String, Option<Version>>,
+	pub conflicts:     Map<String, Option<(Constraint, Version)>>,
+	pub replaces:      Map<String, Option<(Constraint, Version)>>,
+
+	pub depends:       Map<String, Option<(Constraint, Version)>>,
+	pub make_depends:  Map<String, Option<(Constraint, Version)>>,
+	pub check_depends: Map<String, Option<(Constraint, Version)>>,
 }
