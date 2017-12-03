@@ -58,8 +58,6 @@ mod tests {
 	fn assert_compare_version_string(a: &str, b: &str, ordering: Ordering) {
 		assert_eq!(compare_version_string(a, b), ordering, "comparing {:?} to {:?}", a, b);
 		assert_eq!(compare_version_string(b, a), ordering.reverse(), "comparing {:?} to {:?}", a, b);
-		//assert_eq!(VersionStr(a).cmp(&VersionStr(b)), ordering, "comparing {:?} to {:?}", b, a);
-		//assert_eq!(VersionStr(b).cmp(&VersionStr(a)), ordering.reverse(), "comparing {:?} to {:?}", b, a);
 	}
 
 	#[test]

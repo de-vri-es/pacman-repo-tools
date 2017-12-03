@@ -24,6 +24,9 @@
 #![feature(pattern)]
 #![feature(conservative_impl_trait)]
 
+#[macro_use]
+mod macros;
+
 pub mod alpm;
 pub mod package;
 pub mod srcinfo;

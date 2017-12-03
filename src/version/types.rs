@@ -1,13 +1,19 @@
-use std::cmp::Ordering;
-
 use super::compare::compare_version_string;
 use super::parse::split_parts;
+
+use std;
 
 #[derive(Debug)]
 pub struct VersionStr<'a>(&'a str);
 
 #[derive(Debug)]
 pub struct VersionString(String);
+
+impl<'a> VersionStr<'a> { pub fn new<T: Into<&'a str>>(s: T) -> VersionStr<'a> { VersionStr   (s.into()) }}
+impl     VersionString  { pub fn new<T: Into<String >>(s: T) -> VersionString  { VersionString(s.into()) }}
+
+impl_ord!(    VersionString;  self, other => { compare_version_string(self.0.as_ref(), other.0.as_ref()) });
+impl_ord!('a; VersionStr<'a>; self, other => { compare_version_string(self.0, other.0) });
 
 /// A package version with epoch, pkgver and pkgrel.
 #[derive(PartialEq,PartialOrd,Eq,Ord,Debug)]
@@ -24,16 +30,6 @@ pub struct VersionParts<'a> {
 	pub pkgver: VersionStr<'a>,
 	pub pkgrel: Option<VersionStr<'a>>,
 }
-
-impl Ord        for VersionString { fn         cmp(&self, other: &VersionString) -> Ordering { compare_version_string(self.0.as_ref(), other.0.as_ref()) }}
-impl PartialOrd for VersionString { fn partial_cmp(&self, other: &VersionString) -> Option<Ordering> { Some(self.cmp(other)) }}
-impl PartialEq  for VersionString { fn          eq(&self, other: &VersionString) -> bool { self.cmp(other) == Ordering::Equal }}
-impl Eq         for VersionString {}
-
-impl<'a> Ord        for VersionStr<'a> { fn         cmp(&self, other: &VersionStr<'a>) -> Ordering { compare_version_string(self.0, other.0) }}
-impl<'a> PartialOrd for VersionStr<'a> { fn partial_cmp(&self, other: &VersionStr<'a>) -> Option<Ordering> { Some(self.cmp(other)) }}
-impl<'a> PartialEq  for VersionStr<'a> { fn          eq(&self, other: &VersionStr<'a>) -> bool { self.cmp(other) == Ordering::Equal }}
-impl<'a> Eq         for VersionStr<'a> {}
 
 // Conversions to/from VersionString and string.
 impl From<String> for VersionString { fn from(s: String) -> VersionString {VersionString(s)}}
@@ -72,5 +68,32 @@ impl<'a> Into<VersionParts<'a>> for &'a Version { fn into(self) -> VersionParts<
 impl Version {
 	pub fn from_string(s: String) -> Version {
 		split_parts(s.as_ref()).into()
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	#[test]
+	fn test_compare_version_str() {
+		assert!(VersionStr::new("0") <  VersionStr::new("1"));
+		assert!(VersionStr::new("0") <= VersionStr::new("1"));
+		assert!(VersionStr::new("0") != VersionStr::new("1"));
+		assert!(VersionStr::new("2") >  VersionStr::new("1"));
+		assert!(VersionStr::new("2") >= VersionStr::new("1"));
+		assert!(VersionStr::new("2") != VersionStr::new("1"));
+		assert!(VersionStr::new("1") == VersionStr::new("1"));
+	}
+
+	#[test]
+	fn test_compare_version_string() {
+		assert!(VersionString::new("0") <  VersionString::new("1"));
+		assert!(VersionString::new("0") <= VersionString::new("1"));
+		assert!(VersionString::new("0") != VersionString::new("1"));
+		assert!(VersionString::new("2") >  VersionString::new("1"));
+		assert!(VersionString::new("2") >= VersionString::new("1"));
+		assert!(VersionString::new("2") != VersionString::new("1"));
+		assert!(VersionString::new("1") == VersionString::new("1"));
 	}
 }
