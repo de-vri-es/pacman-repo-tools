@@ -3,71 +3,85 @@ use super::parse::split_parts;
 
 use std;
 
+/// A view into a string, split into version parts.
 #[derive(Debug)]
-pub struct VersionStr<'a>(&'a str);
-
-#[derive(Debug)]
-pub struct VersionString(String);
-
-impl<'a> VersionStr<'a> { pub fn new<T: Into<&'a str>>(s: T) -> VersionStr<'a> { VersionStr   (s.into()) }}
-impl     VersionString  { pub fn new<T: Into<String >>(s: T) -> VersionString  { VersionString(s.into()) }}
-
-impl_ord!(    VersionString;  self, other => { compare_version_string(self.0.as_ref(), other.0.as_ref()) });
-impl_ord!('a; VersionStr<'a>; self, other => { compare_version_string(self.0, other.0) });
+pub struct Version<'a> {
+	pub epoch: i32,
+	pub pkgver: &'a str,
+	pub pkgrel: Option<&'a str>,
+}
 
 /// A package version with epoch, pkgver and pkgrel.
-#[derive(PartialEq,PartialOrd,Eq,Ord,Debug)]
-pub struct Version {
+#[derive(Debug)]
+pub struct VersionBuf {
 	pub epoch: i32,
-	pub pkgver: VersionString,
-	pub pkgrel: Option<VersionString>,
+	pub pkgver: String,
+	pub pkgrel: Option<String>,
 }
 
-/// A view into a string splitting it into version parts.
-#[derive(PartialEq,PartialOrd,Eq,Ord,Debug)]
-pub struct VersionParts<'a> {
-	pub epoch: i32,
-	pub pkgver: VersionStr<'a>,
-	pub pkgrel: Option<VersionStr<'a>>,
+impl<'a> Version<'a> {
+	pub fn new(epoch: i32, pkgver: &'a str, pkgrel: Option<&'a str>) -> Version<'a>{
+		Version{epoch, pkgver, pkgrel}
+	}
+
+	pub fn from_str(s: &'a str) -> Version<'a> {
+		split_parts(s)
+	}
 }
 
-// Conversions to/from VersionString and String.
-impl From<String> for VersionString { fn from(s: String) -> VersionString {VersionString(s)}}
-impl Into<String> for VersionString { fn into(self) -> String {self.0}}
-
-// Conversions to/from VersionString and str.
-impl<'a> From<&'a str> for     VersionString { fn from(s: &'a str) -> VersionString {VersionString(s.into())}}
-impl<'a> Into<&'a str> for &'a VersionString { fn into(self) -> &'a str {self.0.as_ref()}}
-
-// Conversions to/from VersionStr and str.
-impl<'a> From<&'a str> for VersionStr<'a> { fn from(s: &'a str) -> VersionStr<'a> {VersionStr(s)}}
-impl<'a> Into<&'a str> for VersionStr<'a> { fn into(self) -> &'a str {self.0}}
-
-// Conversions to/from VersionString and VersionStr.
-impl<'a> Into<VersionString>  for VersionStr<'a>    { fn into(self) -> VersionString  {VersionString(self.0.into())}}
-impl<'a> Into<VersionStr<'a>> for &'a VersionString { fn into(self) -> VersionStr<'a> {VersionStr(self.0.as_ref())}}
-
-// Conversion from VersionParts to Version.
-impl<'a> Into<Version> for VersionParts<'a> { fn into(self) -> Version {
-	Version{
-		epoch: self.epoch,
-		pkgver: self.pkgver.into(),
-		pkgrel: self.pkgrel.map(|x| x.into()),
+impl VersionBuf {
+	pub fn new(epoch: i32, pkgver: String, pkgrel: Option<String>) -> VersionBuf {
+		VersionBuf{epoch, pkgver, pkgrel}
 	}
-}}
 
-// Conversion from Version to VersionParts
-impl<'a> Into<VersionParts<'a>> for &'a Version { fn into(self) -> VersionParts<'a> {
-	VersionParts {
-		epoch: self.epoch,
-		pkgver: (&self.pkgver).into(),
-		pkgrel: self.pkgrel.as_ref().map(|x| x.into()),
-	}
-}}
-
-impl Version {
-	pub fn from_string(s: String) -> Version {
+	pub fn from_string(s: String) -> VersionBuf {
 		split_parts(s.as_ref()).into()
+	}
+}
+
+impl<'a> Ord for Version<'a> {
+	fn cmp(&self, other: &Version) -> std::cmp::Ordering {
+		return_not_equal!(self.epoch.cmp(&other.epoch));
+		return_not_equal!(compare_version_string(self.pkgver, other.pkgver));
+		match (self.pkgrel, other.pkgrel) {
+			(None, None)       => std::cmp::Ordering::Equal,
+			(None, Some(_))    => std::cmp::Ordering::Less,
+			(Some(_), None)    => std::cmp::Ordering::Greater,
+			(Some(a), Some(b)) => compare_version_string(a, b)
+		}
+	}
+}
+impl_ord_requisites!('a; Version<'a>);
+
+impl Ord for VersionBuf {
+	fn cmp(&self, other: &VersionBuf) -> std::cmp::Ordering {
+		let as_ref : Version = self.into();
+		as_ref.cmp(&other.into())
+	}
+}
+impl_ord_requisites!(VersionBuf);
+
+
+// Conversion from &VersionBuf to Version
+impl<'a> Into<VersionBuf> for Version<'a> {
+
+	fn into(self) -> VersionBuf {
+		VersionBuf::new(
+			self.epoch,
+			self.pkgver.to_string(),
+			self.pkgrel.as_ref().map(|x| x.to_string())
+		)
+	}
+}
+
+// Conversion from Version to VersionBuf.
+impl<'a> Into<Version<'a>> for &'a VersionBuf {
+	fn into(self) -> Version<'a> {
+		Version::new(
+			self.epoch,
+			self.pkgver.as_ref(),
+			self.pkgrel.as_ref().map(|x| x.as_ref())
+		)
 	}
 }
 
@@ -76,24 +90,16 @@ mod tests {
 	use super::*;
 
 	#[test]
-	fn test_compare_version_str() {
-		assert!(VersionStr::new("0") <  VersionStr::new("1"));
-		assert!(VersionStr::new("0") <= VersionStr::new("1"));
-		assert!(VersionStr::new("0") != VersionStr::new("1"));
-		assert!(VersionStr::new("2") >  VersionStr::new("1"));
-		assert!(VersionStr::new("2") >= VersionStr::new("1"));
-		assert!(VersionStr::new("2") != VersionStr::new("1"));
-		assert!(VersionStr::new("1") == VersionStr::new("1"));
+	fn test_compare_version() {
+		assert!(Version::new(0, "1", Some("2")) < Version::new(0, "1", Some("3")));
+		assert!(Version::new(0, "1", Some("2")) < Version::new(0, "2", Some("1")));
+		assert!(Version::new(0, "1", Some("2")) < Version::new(1, "0", Some("1")));
 	}
 
 	#[test]
-	fn test_compare_version_string() {
-		assert!(VersionString::new("0") <  VersionString::new("1"));
-		assert!(VersionString::new("0") <= VersionString::new("1"));
-		assert!(VersionString::new("0") != VersionString::new("1"));
-		assert!(VersionString::new("2") >  VersionString::new("1"));
-		assert!(VersionString::new("2") >= VersionString::new("1"));
-		assert!(VersionString::new("2") != VersionString::new("1"));
-		assert!(VersionString::new("1") == VersionString::new("1"));
+	fn test_compare_version_buf() {
+		assert!(VersionBuf::new(0, "1".to_string(), Some("2".to_string())) < VersionBuf::new(0, "1".to_string(), Some("3".to_string())));
+		assert!(VersionBuf::new(0, "1".to_string(), Some("2".to_string())) < VersionBuf::new(0, "2".to_string(), Some("1".to_string())));
+		assert!(VersionBuf::new(0, "1".to_string(), Some("2".to_string())) < VersionBuf::new(1, "0".to_string(), Some("1".to_string())));
 	}
 }

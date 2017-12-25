@@ -1,11 +1,22 @@
-macro_rules! impl_ord {
-	($($template:tt),*; $type:ty; $_self:ident, $other:ident => $body:block) => (
-		impl<$($template)*> Ord for $type { fn cmp(&$_self, $other: &$type) -> std::cmp::Ordering $body }
-		impl<$($template)*> PartialOrd for $type { fn partial_cmp(&$_self, other: &$type) -> Option<std::cmp::Ordering> { Some($_self.cmp(other)) }}
-		impl<$($template)*> PartialEq  for $type { fn          eq(&$_self, other: &$type) -> bool { $_self.cmp(other) == std::cmp::Ordering::Equal }}
+#[macro_export]
+macro_rules! impl_ord_requisites {
+	($($template:tt),*; $type:ty) => (
+		impl<$($template)*> PartialOrd for $type { fn partial_cmp(&self, other: &$type) -> Option<std::cmp::Ordering> { Some(self.cmp(other)) }}
+		impl<$($template)*> PartialEq  for $type { fn          eq(&self, other: &$type) -> bool { self.cmp(other) == std::cmp::Ordering::Equal }}
 		impl<$($template)*> Eq         for $type {}
 	);
-	($type:ty; $_self:ident, $other:ident => $body:block) => (impl_ord!('a; $type; $_self, $other => $body););
+	($type:ty) => (impl_ord_requisites!('a; $type);)
+}
+
+#[macro_export]
+macro_rules! return_not_equal {
+	($a:expr) => {
+		match $a {
+			std::cmp::Ordering::Equal   => (),
+			std::cmp::Ordering::Less    => return std::cmp::Ordering::Less,
+			std::cmp::Ordering::Greater => return std::cmp::Ordering::Greater,
+		}
+	};
 }
 
 #[macro_export]
@@ -22,9 +33,6 @@ macro_rules! assert_seq {
 
 #[cfg(test)]
 mod tests {
-
-	use std;
-
 	#[test]
 	fn assert_seq_identifier() {
 		let iterator = "aap noot mies".split(" ");

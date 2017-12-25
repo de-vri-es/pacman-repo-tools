@@ -1,6 +1,6 @@
 use util::ConsumableStr;
 
-use super::types::VersionParts;
+use super::types::Version;
 
 fn consume_epoch(v: &mut &str) -> Option<i32> {
 	let mut a: &str = v;
@@ -20,12 +20,12 @@ fn consume_pkgrel<'a>(v: &mut &'a str) -> Option<&'a str> {
 	})
 }
 
-pub fn split_parts(version: &str) -> VersionParts {
+pub fn split_parts(version: &str) -> Version {
 	let mut version = version;
 	let epoch  = consume_epoch(&mut version).unwrap_or(0);
 	let pkgrel = consume_pkgrel(&mut version).map(|x| x.into());
 	let pkgver = version.into();
-	VersionParts{epoch, pkgver, pkgrel}
+	Version{epoch, pkgver, pkgrel}
 }
 
 #[cfg(test)]

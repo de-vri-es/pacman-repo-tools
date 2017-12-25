@@ -26,10 +26,8 @@ mod types;
 mod compare;
 mod parse;
 
-pub use self::types::VersionString;
 pub use self::types::Version;
-pub use self::types::VersionStr;
-pub use self::types::VersionParts;
+pub use self::types::VersionBuf;
 
 pub use self::compare::compare_version_string;
 pub use self::compare::compare_package_version;

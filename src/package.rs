@@ -23,7 +23,7 @@
 
 use std::collections::BTreeMap as Map;
 
-use version::Version;
+use version::VersionBuf;
 
 pub enum Constraint {
 	Equal,
@@ -35,12 +35,17 @@ pub enum Constraint {
 
 pub struct VersionedTarget {
 	pub name: String,
-	pub version: Version,
+	pub version: VersionBuf,
+}
+
+pub struct VersionConstraint {
+	pub version:    VersionBuf,
+	pub constraint: Constraint,
 }
 
 pub struct Package {
 	pub name:          String,
-	pub version:       Version,
+	pub version:       VersionBuf,
 
 	pub url:           String,
 	pub description:   String,
@@ -49,11 +54,11 @@ pub struct Package {
 	pub groups:        Vec<String>,
 	pub backup:        Vec<String>,
 
-	pub provides:      Map<String, Option<Version>>,
-	pub conflicts:     Map<String, Option<(Constraint, Version)>>,
-	pub replaces:      Map<String, Option<(Constraint, Version)>>,
+	pub provides:      Map<String, Option<VersionBuf>>,
+	pub conflicts:     Map<String, Option<VersionConstraint>>,
+	pub replaces:      Map<String, Option<VersionConstraint>>,
 
-	pub depends:       Map<String, Option<(Constraint, Version)>>,
-	pub make_depends:  Map<String, Option<(Constraint, Version)>>,
-	pub check_depends: Map<String, Option<(Constraint, Version)>>,
+	pub depends:       Map<String, Option<VersionConstraint>>,
+	pub make_depends:  Map<String, Option<VersionConstraint>>,
+	pub check_depends: Map<String, Option<VersionConstraint>>,
 }
