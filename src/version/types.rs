@@ -39,6 +39,7 @@ impl VersionBuf {
 	}
 }
 
+impl_ord_requisites!('a; Version<'a>);
 impl<'a> Ord for Version<'a> {
 	fn cmp(&self, other: &Version) -> std::cmp::Ordering {
 		return_not_equal!(self.epoch.cmp(&other.epoch));
@@ -51,20 +52,17 @@ impl<'a> Ord for Version<'a> {
 		}
 	}
 }
-impl_ord_requisites!('a; Version<'a>);
 
+impl_ord_requisites!(VersionBuf);
 impl Ord for VersionBuf {
 	fn cmp(&self, other: &VersionBuf) -> std::cmp::Ordering {
 		let as_ref : Version = self.into();
 		as_ref.cmp(&other.into())
 	}
 }
-impl_ord_requisites!(VersionBuf);
 
-
-// Conversion from &VersionBuf to Version
+// Conversion from Version to VersionBuf
 impl<'a> Into<VersionBuf> for Version<'a> {
-
 	fn into(self) -> VersionBuf {
 		VersionBuf::new(
 			self.epoch,
@@ -74,7 +72,7 @@ impl<'a> Into<VersionBuf> for Version<'a> {
 	}
 }
 
-// Conversion from Version to VersionBuf.
+// Conversion from &VersionBuf to Version.
 impl<'a> Into<Version<'a>> for &'a VersionBuf {
 	fn into(self) -> Version<'a> {
 		Version::new(
