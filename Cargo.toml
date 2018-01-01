@@ -7,3 +7,4 @@ authors     = ["Maarten de Vries <maarten@de-vri.es>"]
 
 [dependencies]
 maplit = "*"
+walkdir = "*"

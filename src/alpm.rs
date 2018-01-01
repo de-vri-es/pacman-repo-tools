@@ -35,14 +35,14 @@ fn parse_key(line: &str) -> Option<&str> {
 	}
 }
 
-pub fn parse_dict<'a>(blob: &'a str) -> Result<BTreeMap<&'a str, Vec<&'a str>>, ParseError<'a>> {
+pub fn parse_dict<'a>(blob: &'a str) -> Result<BTreeMap<&'a str, Vec<&'a str>>, ParseError> {
 	// Iterator over trimmed lines, skipping empty lines.
-	let mut lines  = blob.split('\n').map(|x| x.trim()).enumerate().filter(|&(_, x)| !x.is_empty());
+	let mut lines  = blob.split('\n').map(|x| x.trim()).filter(|x| !x.is_empty());
 
 	// Parse a key from the first line.
 	let mut key = match lines.next() {
-		None            => return Ok(BTreeMap::default()),
-		Some((i, line)) => parse_key(line).ok_or(ParseError::new(i, line, "expected first non-empty line to be a key in the format %NAME%"))?,
+		None       => return Ok(BTreeMap::default()),
+		Some(line) => parse_key(line).ok_or(ParseError::for_token(blob, line, "expected first non-empty line to be a key in the format %NAME%"))?,
 	};
 
 	// Loop until all lines are processed.
@@ -52,7 +52,7 @@ pub fn parse_dict<'a>(blob: &'a str) -> Result<BTreeMap<&'a str, Vec<&'a str>>, 
 		let values = result.entry(key).or_insert(Vec::default());
 
 		// Loop over value lines.
-		for (_, line) in &mut lines {
+		for line in &mut lines {
 			// If a key is found, continue the outer loop.
 			if let Some(new_key) = parse_key(line) {
 				key = new_key;
