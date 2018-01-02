@@ -1,5 +1,6 @@
 use super::compare::compare_version_string;
-use super::parse::split_parts;
+use super::parse::consume_epoch;
+use super::parse::consume_pkgrel;
 
 use std;
 
@@ -24,9 +25,17 @@ impl<'a> Version<'a> {
 		Version{epoch, pkgver, pkgrel}
 	}
 
-	pub fn from_str(s: &'a str) -> Version<'a> {
-		split_parts(s)
+	pub fn from_str(version: &str) -> Version {
+		let mut version = version;
+		let epoch  = consume_epoch(&mut version).unwrap_or(0);
+		let pkgrel = consume_pkgrel(&mut version).map(|x| x.into());
+		let pkgver = version.into();
+		Version{epoch, pkgver, pkgrel}
 	}
+}
+
+impl<'a> From<&'a str> for Version<'a> {
+	fn from(blob: &'a str) -> Self { Self::from_str(blob) }
 }
 
 impl VersionBuf {
@@ -35,8 +44,12 @@ impl VersionBuf {
 	}
 
 	pub fn from_string(s: String) -> VersionBuf {
-		split_parts(s.as_ref()).into()
+		Version::from_str(&s).into()
 	}
+}
+
+impl<'a> From<String> for VersionBuf {
+	fn from(blob: String) -> Self { Self::from_string(blob) }
 }
 
 impl_ord_requisites!('a; Version<'a>);

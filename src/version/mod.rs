@@ -31,4 +31,3 @@ pub use self::types::VersionBuf;
 
 pub use self::compare::compare_version_string;
 pub use self::compare::compare_package_version;
-pub use self::parse::split_parts;

@@ -1,8 +1,6 @@
 use util::ConsumableStr;
 
-use super::types::Version;
-
-fn consume_epoch(v: &mut &str) -> Option<i32> {
+pub fn consume_epoch(v: &mut &str) -> Option<i32> {
 	let mut a: &str = v;
 	let epoch = a.consume_front_while(|x: char| x.is_digit(10));
 	if a.consume_front_n(1) == Some(":") {
@@ -13,19 +11,11 @@ fn consume_epoch(v: &mut &str) -> Option<i32> {
 	}
 }
 
-fn consume_pkgrel<'a>(v: &mut &'a str) -> Option<&'a str> {
+pub fn consume_pkgrel<'a>(v: &mut &'a str) -> Option<&'a str> {
 	v.rpartition('-').map(|(rest, _, pkgrel)| {
 		*v = rest;
 		pkgrel
 	})
-}
-
-pub fn split_parts(version: &str) -> Version {
-	let mut version = version;
-	let epoch  = consume_epoch(&mut version).unwrap_or(0);
-	let pkgrel = consume_pkgrel(&mut version).map(|x| x.into());
-	let pkgver = version.into();
-	Version{epoch, pkgver, pkgrel}
 }
 
 #[cfg(test)]

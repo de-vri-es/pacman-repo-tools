@@ -21,18 +21,26 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-use std::str::pattern::{Pattern,ReverseSearcher,Searcher};
+use std::str::pattern::{Pattern,ReverseSearcher,Searcher,SearchStep};
 
 pub trait ConsumableStr<'a> : Copy {
 	fn consume_front_n(&mut self, n: usize) -> Option<&'a str>;
 	fn consume_back_n(&mut self, n: usize) -> Option<&'a str>;
 
+	fn consume_front<P: Pattern<'a>>(&mut self, pattern: P) -> Option<&'a str>;
+	fn consume_back<P: Pattern<'a>>(&mut self, pattern: P) -> Option<&'a str>
+		where P::Searcher: ReverseSearcher<'a>;
+
 	fn consume_front_while<P: Pattern<'a>>(&mut self, pattern: P) -> &'a str;
 	fn consume_back_while<P: Pattern<'a>>(&mut self, pattern: P) -> &'a str
 		where P::Searcher: ReverseSearcher<'a>;
 
-	fn  partition<P: Pattern<'a>>(self, pattern: P) -> Option<(&'a str, &'a str, &'a str)>;
-	fn rpartition<P: Pattern<'a>>(self, pattern: P) -> Option<(&'a str, &'a str, &'a str)>
+	fn consume_front_while_not<P: Pattern<'a>>(&mut self, pattern: P) -> &'a str;
+	fn consume_back_while_not<P: Pattern<'a>>(&mut self, pattern: P) -> &'a str
+		where P::Searcher: ReverseSearcher<'a>;
+
+	fn  partition<P: Pattern<'a>>(&self, pattern: P) -> Option<(&'a str, &'a str, &'a str)>;
+	fn rpartition<P: Pattern<'a>>(&self, pattern: P) -> Option<(&'a str, &'a str, &'a str)>
 		where P::Searcher: ReverseSearcher<'a>;
 }
 
@@ -52,6 +60,22 @@ impl<'a> ConsumableStr<'a> for &'a str {
 		result
 	}
 
+	fn consume_front<P: Pattern<'a>>(&mut self, pattern: P) -> Option<&'a str> {
+		match pattern.into_searcher(self).next() {
+			SearchStep::Match(start, end) => Some(&self[start..end]),
+			_ => None,
+		}
+	}
+
+	fn consume_back<P: Pattern<'a>>(&mut self, pattern: P) -> Option<&'a str>
+		where P::Searcher: ReverseSearcher<'a>
+	{
+		match pattern.into_searcher(self).next_back() {
+			SearchStep::Match(start, end) => Some(&self[start..end]),
+			_ => None,
+		}
+	}
+
 	fn consume_front_while<P: Pattern<'a>> (&mut self, pattern: P) -> &'a str {
 		let i = pattern.into_searcher(self).next_reject().map(|(i, _)| i).unwrap_or(self.len());
 		let (left, right) = self.split_at(i);
@@ -68,13 +92,29 @@ impl<'a> ConsumableStr<'a> for &'a str {
 		right
 	}
 
-	fn partition<P: Pattern<'a>>(self, pattern: P) -> Option<(&'a str, &'a str, &'a str)> {
+	fn consume_front_while_not<P: Pattern<'a>> (&mut self, pattern: P) -> &'a str {
+		let i = pattern.into_searcher(self).next_match().map(|(i, _)| i).unwrap_or(self.len());
+		let (left, right) = self.split_at(i);
+		*self = right;
+		left
+	}
+
+	fn consume_back_while_not<P: Pattern<'a>> (&mut self, pattern: P) -> &'a str
+		where P::Searcher: ReverseSearcher<'a>
+	{
+		let i = pattern.into_searcher(self).next_match_back().map(|(_, i)| i).unwrap_or(0);
+		let (left, right) = self.split_at(i);
+		*self = left;
+		right
+	}
+
+	fn partition<P: Pattern<'a>>(&self, pattern: P) -> Option<(&'a str, &'a str, &'a str)> {
 		pattern.into_searcher(self).next_match().map(|(begin, end)| {
 			(&self[..begin], &self[begin..end], &self[end..])
 		})
 	}
 
-	fn rpartition<P: Pattern<'a>>(self, pattern: P) -> Option<(&'a str, &'a str, &'a str)>
+	fn rpartition<P: Pattern<'a>>(&self, pattern: P) -> Option<(&'a str, &'a str, &'a str)>
 		where P::Searcher: ReverseSearcher<'a>
 	{
 		pattern.into_searcher(self).next_match_back().map(|(begin, end)| {
@@ -183,6 +223,56 @@ mod tests {
 		{
 			let mut a: &str = data.as_ref();
 			assert_eq!(a.consume_back_while(|c| c == 'a' || c == 'b'), "aaabbb");
+			assert_eq!(a, "");
+		}
+	}
+
+	#[test]
+	fn consume_front_while_not() {
+		let data = String::from("aaabbb");
+		{
+			let mut a: &str = data.as_ref();
+			assert_eq!(a.consume_front_while_not('b'), "aaa");
+			assert_eq!(a, "bbb");
+		}
+		{
+			let mut a: &str = data.as_ref();
+			assert_eq!(a.consume_front_while_not(|c| c == 'b'), "aaa");
+			assert_eq!(a, "bbb");
+		}
+		{
+			let mut a: &str = data.as_ref();
+			assert_eq!(a.consume_front_while_not('a'), "");
+			assert_eq!(a, "aaabbb");
+		}
+		{
+			let mut a: &str = data.as_ref();
+			assert_eq!(a.consume_front_while_not(|c| c == 'c'), "aaabbb");
+			assert_eq!(a, "");
+		}
+	}
+
+	#[test]
+	fn consume_back_while_not() {
+		let data = String::from("aaabbb");
+		{
+			let mut a: &str = data.as_ref();
+			assert_eq!(a.consume_back_while_not('a'), "bbb");
+			assert_eq!(a, "aaa");
+		}
+		{
+			let mut a: &str = data.as_ref();
+			assert_eq!(a.consume_back_while_not(|c| c == 'a'), "bbb");
+			assert_eq!(a, "aaa");
+		}
+		{
+			let mut a: &str = data.as_ref();
+			assert_eq!(a.consume_back_while_not('b'), "");
+			assert_eq!(a, "aaabbb");
+		}
+		{
+			let mut a: &str = data.as_ref();
+			assert_eq!(a.consume_back_while_not(|c| c == 'c'), "aaabbb");
 			assert_eq!(a, "");
 		}
 	}

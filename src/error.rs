@@ -15,6 +15,10 @@ impl ParseError {
 		ParseError{message: message.into(), token_start, token_end}
 	}
 
+	pub fn whole_blob<S: Into<String>>(blob: &str, message: S) -> ParseError {
+		ParseError{message: message.into(), token_start: blob.len(), token_end: blob.len()}
+	}
+
 	pub fn extract_token<'a>(&self, data: &'a str) -> &'a str {
 		&data[self.token_start..self.token_end]
 	}

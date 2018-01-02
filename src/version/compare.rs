@@ -1,8 +1,7 @@
 use std::cmp::Ordering;
 
+use super::Version;
 use util::ConsumableStr;
-
-use super::parse::split_parts;
 
 pub fn compare_version_string(a: &str, b: &str) -> Ordering {
 	let mut a = a;
@@ -48,7 +47,7 @@ pub fn compare_version_string(a: &str, b: &str) -> Ordering {
 }
 
 pub fn compare_package_version(a: &str, b: &str) -> Ordering {
-	split_parts(a).cmp(&split_parts(b))
+	Version::from_str(a).cmp(&b.into())
 }
 
 #[cfg(test)]

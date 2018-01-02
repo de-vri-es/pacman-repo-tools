@@ -21,6 +21,8 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+use std::collections::BTreeMap as Map;
+use std::collections::btree_map::Entry as Entry;
 use std::error;
 use std::ffi::OsStr;
 use std::fmt;
@@ -33,8 +35,13 @@ extern crate walkdir;
 use self::walkdir::{DirEntry, WalkDir};
 
 use error::ParseError;
-use package::{Package};
+use package::Package;
+use package::VersionConstraint;
+use package::parse_depends;
+use package::parse_provides;
 use util::ConsumableStr;
+use version::Version;
+use version::VersionBuf;
 
 #[derive(Debug)]
 pub enum ReadDbError {
@@ -80,8 +87,77 @@ pub fn iterate_info<'a>(blob: &'a str) -> impl Iterator<Item = Result<Option<(&'
 	})
 }
 
-pub fn parse_srcinfo_pkg(_blob: &str) -> Result<Package, ParseError> {
-	unimplemented!();
+fn set_once<T>(option: &mut Option<T>, value: T) -> Option<()> {
+	if option.is_some() {
+		None
+	} else {
+		*option = Some(value);
+		Some(())
+	}
+}
+
+fn set_once_err<T>(option: &mut Option<T>, value: T, blob: &str, key: &str) -> Result<(), ParseError> {
+	set_once(option, value).ok_or_else(|| ParseError::for_token(blob, key, format!("duplicate key: {}", key)))
+}
+
+fn insert_err<V, IV: Into<V>>(map: &mut Map<String,V>, map_name: &str, blob: &str, entry: (&str, IV)) -> Result<(), ParseError> {
+	let (key, value) = entry;
+	match map.entry(key.into()) {
+		Entry::Vacant(x)   => { x.insert(value.into()); Ok(()) },
+		Entry::Occupied(_) => { Err(ParseError::for_token(blob, key, format!("duplicate {}: {}", map_name, key))) }
+	}
+}
+
+pub fn parse_srcinfo(blob: &str) -> Result<Package, ParseError> {
+	let mut name:    Option<String>     = Default::default();
+	let mut version: Option<VersionBuf> = Default::default();
+
+	let mut url:           Option<String> = Default::default();
+	let mut description:   Option<String> = Default::default();
+	let mut licenses:      Vec<String>    = Default::default();
+
+	let mut groups:        Vec<String> = Default::default();
+	let mut backup:        Vec<String> = Default::default();
+
+	let mut provides:      Map<String, Option<VersionBuf>> = Default::default();
+	let mut conflicts:     Map<String, Option<VersionConstraint>> = Default::default();
+	let mut replaces:      Map<String, Option<VersionConstraint>> = Default::default();
+
+	let mut depends:       Map<String, Option<VersionConstraint>> = Default::default();
+	let mut make_depends:  Map<String, Option<VersionConstraint>> = Default::default();
+	let mut check_depends: Map<String, Option<VersionConstraint>> = Default::default();
+
+	for entry in iterate_info(blob) {
+		if let Some((key, value)) = entry? {
+			if false {}
+			else if key == "pkgname"     { set_once_err(&mut name, value.into(), blob, key)? }
+			else if key == "version"     { set_once_err(&mut version, Version::from_str(value).into(), blob, key)? }
+			else if key == "url"         { set_once_err(&mut url, value.into(), blob, key)? }
+			else if key == "description" { set_once_err(&mut description, value.into(), blob, key)? }
+
+
+			else if key == "licenses"      { licenses.push(value.into()); }
+			else if key == "groups"        { groups.push(value.into()); }
+			else if key == "backup"        { backup.push(value.into()); }
+
+			else if key == "provides"      { insert_err(&mut provides, "provides", blob, parse_provides(value))? }
+			else if key == "conflicts"     { insert_err(&mut conflicts, "conflicts", blob, parse_depends(value))? }
+
+			else if key == "replaces"      { insert_err(&mut replaces,      "replaces",      blob, parse_depends(value))? }
+			else if key == "depends"       { insert_err(&mut depends,       "depends",       blob, parse_depends(value))? }
+			else if key == "make_depends"  { insert_err(&mut make_depends,  "make_depends",  blob, parse_depends(value))? }
+			else if key == "check_depends" { insert_err(&mut check_depends, "check_depends", blob, parse_depends(value))? }
+		}
+	}
+
+	Ok(Package {
+		name:    name.ok_or_else(|| ParseError::whole_blob(blob, "no pkgname found"))?,
+		version: version.ok_or_else(|| ParseError::whole_blob(blob, "no pkgver found"))?,
+		url, description, licenses,
+		groups, backup,
+		provides, conflicts, replaces,
+		depends, make_depends, check_depends,
+	})
 }
 
 /// Find all .SRCINFO files in a given directory.
@@ -100,7 +176,7 @@ pub fn read_srcinfo_db(directory: &Path) -> impl Iterator<Item = Result<(String,
 			let mut file = File::open(entry.path()).map_err(|x| ReadDbError::IoError(entry.path().to_path_buf(), x))?;
 			let mut data = String::new();
 			file.read_to_string(&mut data).map_err(|x| ReadDbError::IoError(entry.path().to_path_buf(), x))?;
-			let package = parse_srcinfo_pkg(&data).map_err(|x| ReadDbError::ParseError(entry.path().to_path_buf(), data, x))?;
+			let package = parse_srcinfo(&data).map_err(|x| ReadDbError::ParseError(entry.path().to_path_buf(), data, x))?;
 			Ok((package.name.clone(), package))
 		})
 	})

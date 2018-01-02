@@ -23,6 +23,8 @@
 
 use std::collections::BTreeMap as Map;
 
+use util::ConsumableStr;
+use version::Version;
 use version::VersionBuf;
 
 #[derive(Debug)]
@@ -65,4 +67,38 @@ pub struct Package {
 	pub depends:       Map<String, Option<VersionConstraint>>,
 	pub make_depends:  Map<String, Option<VersionConstraint>>,
 	pub check_depends: Map<String, Option<VersionConstraint>>,
+}
+
+pub fn parse_provides(blob: &str) -> (&str, Option<VersionBuf>) {
+	if let Some((key, _, version)) = blob.partition('=') {
+		(key, Some(Version::from_str(version).into()))
+	} else {
+		(blob, None)
+	}
+}
+
+pub fn eat_constraint(blob: &str) -> (&str, Option<Constraint>) {
+	let mut blob = blob;
+	if false { unreachable!() }
+	else if blob.consume_front(">=").is_some() { (blob, Some(Constraint::GreaterEqual)) }
+	else if blob.consume_front("<=").is_some() { (blob, Some(Constraint::LessEqual)) }
+	else if blob.consume_front(">").is_some()  { (blob, Some(Constraint::Greater)) }
+	else if blob.consume_front("<").is_some()  { (blob, Some(Constraint::Less)) }
+	else if blob.consume_front("==").is_some() { (blob, Some(Constraint::Equal)) } // shame on you, packagers
+	else if blob.consume_front("=").is_some()  { (blob, Some(Constraint::Equal)) }
+	else { (blob, None) }
+}
+
+fn is_constraint_char(c: char) -> bool {
+	c == '>' || c == '<' || c == '='
+}
+
+pub fn parse_depends(blob: &str) -> (&str, Option<VersionConstraint>) {
+	if let Some(start) = blob.find(is_constraint_char) {
+		let name = &blob[0..start];
+		let (version, constraint) = eat_constraint(&blob[start..]);
+		(name, Some(VersionConstraint{version: Version::from_str(version).into(), constraint: constraint.unwrap()}))
+	} else {
+		(blob, None)
+	}
 }
