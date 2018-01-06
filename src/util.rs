@@ -61,18 +61,24 @@ impl<'a> ConsumableStr<'a> for &'a str {
 	}
 
 	fn consume_front<P: Pattern<'a>>(&mut self, pattern: P) -> Option<&'a str> {
-		match pattern.into_searcher(self).next() {
-			SearchStep::Match(start, end) => Some(&self[start..end]),
-			_ => None,
+		if let SearchStep::Match(start, end) = pattern.into_searcher(self).next() {
+			let result = Some(&self[start..end]);
+			*self = &self[end..];
+			result
+		} else {
+			None
 		}
 	}
 
 	fn consume_back<P: Pattern<'a>>(&mut self, pattern: P) -> Option<&'a str>
 		where P::Searcher: ReverseSearcher<'a>
 	{
-		match pattern.into_searcher(self).next_back() {
-			SearchStep::Match(start, end) => Some(&self[start..end]),
-			_ => None,
+		if let SearchStep::Match(start, end) = pattern.into_searcher(self).next_back() {
+			let result = Some(&self[start..end]);
+			*self = &self[..start];
+			result
+		} else {
+			None
 		}
 	}
 
@@ -173,6 +179,36 @@ mod tests {
 		{
 			let mut a: &str = data.as_ref();
 			assert_eq!(a.consume_back_n(7), None);
+			assert_eq!(a, "abcdef");
+		}
+	}
+
+	#[test]
+	fn consume_front() {
+		let data = String::from("abcdef");
+		{
+			let mut a: &str = data.as_ref();
+			assert_eq!(a.consume_front("abc"), Some("abc"));
+			assert_eq!(a, "def");
+		}
+		{
+			let mut a: &str = data.as_ref();
+			assert_eq!(a.consume_front("def"), None);
+			assert_eq!(a, "abcdef");
+		}
+	}
+
+	#[test]
+	fn consume_back() {
+		let data = String::from("abcdef");
+		{
+			let mut a: &str = data.as_ref();
+			assert_eq!(a.consume_back("def"), Some("def"));
+			assert_eq!(a, "abc");
+		}
+		{
+			let mut a: &str = data.as_ref();
+			assert_eq!(a.consume_back("abc"), None);
 			assert_eq!(a, "abcdef");
 		}
 	}
