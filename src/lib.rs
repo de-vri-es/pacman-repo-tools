@@ -28,11 +28,12 @@
 mod macros;
 
 pub mod alpm;
+pub mod error;
 pub mod package;
 pub mod srcinfo;
 pub mod version;
-pub mod error;
 
+mod parse;
 mod util;
 
 #[cfg(test)]
