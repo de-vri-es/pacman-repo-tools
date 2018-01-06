@@ -27,7 +27,7 @@ use util::ConsumableStr;
 use version::Version;
 use version::VersionBuf;
 
-#[derive(Debug)]
+#[derive(Debug,Eq,PartialEq)]
 pub enum Constraint {
 	Equal,
 	Greater,
@@ -36,19 +36,19 @@ pub enum Constraint {
 	LessEqual,
 }
 
-#[derive(Debug)]
+#[derive(Debug,Eq,PartialEq)]
 pub struct VersionedTarget {
 	pub name: String,
 	pub version: VersionBuf,
 }
 
-#[derive(Debug)]
+#[derive(Debug,Eq,PartialEq)]
 pub struct VersionConstraint {
 	pub version:    VersionBuf,
 	pub constraint: Constraint,
 }
 
-#[derive(Debug)]
+#[derive(Debug,Eq,PartialEq)]
 pub struct Package {
 	pub name:          String,
 	pub version:       VersionBuf,
