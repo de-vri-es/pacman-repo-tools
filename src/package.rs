@@ -63,6 +63,7 @@ pub struct Package {
 	pub replaces:      Map<String, Option<VersionConstraint>>,
 
 	pub depends:       Map<String, Option<VersionConstraint>>,
+	pub opt_depends:   Map<String, Option<VersionConstraint>>,
 	pub make_depends:  Map<String, Option<VersionConstraint>>,
 	pub check_depends: Map<String, Option<VersionConstraint>>,
 }
