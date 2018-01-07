@@ -67,3 +67,68 @@ pub struct Package {
 	pub make_depends:  Map<String, Option<VersionConstraint>>,
 	pub check_depends: Map<String, Option<VersionConstraint>>,
 }
+
+/// A partial package with some information possibly missing.
+#[derive(Default,Clone,Debug,Eq,PartialEq)]
+pub struct PartialPackage {
+	pub name:          Option<String>,
+	pub version:       Option<VersionBuf>,
+
+	pub url:           Option<String>,
+	pub description:   Option<String>,
+	pub licenses:      Option<Vec<String>>,
+
+	pub groups:        Option<Vec<String>>,
+	pub backup:        Option<Vec<String>>,
+
+	pub provides:      Option<Map<String, Option<VersionBuf>>>,
+	pub conflicts:     Option<Map<String, Option<VersionConstraint>>>,
+	pub replaces:      Option<Map<String, Option<VersionConstraint>>>,
+
+	pub depends:       Option<Map<String, Option<VersionConstraint>>>,
+	pub opt_depends:   Option<Map<String, Option<VersionConstraint>>>,
+	pub make_depends:  Option<Map<String, Option<VersionConstraint>>>,
+	pub check_depends: Option<Map<String, Option<VersionConstraint>>>,
+}
+
+impl PartialPackage {
+	/// Try to create a package from the partial package.
+	pub fn into_package(self) -> Result<Package, String> {
+		Ok(Package {
+			name:    self.name.ok_or_else(||    String::from("missing pkgname"))?,
+			version: self.version.ok_or_else(|| String::from("missing pkgver"))?,
+
+			url:           self.url,
+			description:   self.description,
+			licenses:      self.licenses.unwrap_or_default(),
+
+			groups:        self.groups.unwrap_or_default(),
+			backup:        self.backup.unwrap_or_default(),
+
+			provides:      self.provides.unwrap_or_default(),
+			conflicts:     self.conflicts.unwrap_or_default(),
+			replaces:      self.replaces.unwrap_or_default(),
+
+			depends:       self.depends.unwrap_or_default(),
+			opt_depends:   self.opt_depends.unwrap_or_default(),
+			make_depends:  self.make_depends.unwrap_or_default(),
+			check_depends: self.check_depends.unwrap_or_default(),
+		})
+	}
+
+	pub fn add_base(&mut self, base: &PartialPackage) {
+		if self.url.is_none()         { self.url         = base.url.clone()         }
+		if self.description.is_none() { self.description = base.description.clone() }
+		if self.licenses.is_none()    { self.licenses    = base.licenses.clone()    }
+
+		if self.groups.is_none()      { self.groups      = base.groups.clone()      }
+		if self.backup.is_none()      { self.backup      = base.backup.clone()      }
+
+		if self.provides.is_none()    { self.provides    = base.provides.clone()    }
+		if self.conflicts.is_none()   { self.conflicts   = base.conflicts.clone()   }
+		if self.replaces.is_none()    { self.replaces    = base.replaces.clone()    }
+
+		if self.depends.is_none()     { self.depends     = base.depends.clone()     }
+		if self.opt_depends.is_none() { self.opt_depends = base.opt_depends.clone() }
+	}
+}

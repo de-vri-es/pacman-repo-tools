@@ -27,21 +27,18 @@ use std::error;
 use std::ffi::OsStr;
 use std::fmt;
 use std::fs::File;
-use std::io::Error as IoError;
-use std::io::Read;
+use std::io::{Error as IoError, Read};
 use std::path::{Path,PathBuf};
 
 extern crate walkdir;
 use self::walkdir::{DirEntry, WalkDir};
 
 use error::ParseError;
-use package::Package;
-use package::VersionConstraint;
-use parse::parse_depends;
-use parse::parse_provides;
-use util::ConsumableStr;
-use version::Version;
-use version::VersionBuf;
+use package::{Package, PartialPackage};
+use parse::{parse_depends, parse_provides};
+use util::{ConsumableStr, DefaultOption};
+use version::{Version};
+
 
 #[derive(Debug)]
 pub enum ReadDbError {
@@ -87,77 +84,61 @@ pub fn iterate_info<'a>(blob: &'a str) -> impl Iterator<Item = Result<Option<(&'
 	})
 }
 
-fn set_once<T>(option: &mut Option<T>, value: T) -> Option<()> {
+fn set_once_err<T>(option: &mut Option<T>, value: T, blob: &str, key: &str) -> Result<(), ParseError> {
 	if option.is_some() {
-		None
+		Err(ParseError::for_token(blob, key, format!("duplicate key: {}", key)))
 	} else {
 		*option = Some(value);
-		Some(())
+		Ok(())
 	}
 }
 
-fn set_once_err<T>(option: &mut Option<T>, value: T, blob: &str, key: &str) -> Result<(), ParseError> {
-	set_once(option, value).ok_or_else(|| ParseError::for_token(blob, key, format!("duplicate key: {}", key)))
-}
-
-fn insert_err<V, IV: Into<V>>(map: &mut Map<String,V>, map_name: &str, blob: &str, entry: (&str, IV)) -> Result<(), ParseError> {
+fn insert_err<V: Eq, IV: Into<V>>(map: &mut Map<String,V>, map_name: &str, blob: &str, entry: (&str, IV)) -> Result<(), ParseError> {
 	let (key, value) = entry;
 	match map.entry(key.into()) {
 		Entry::Vacant(x)   => { x.insert(value.into()); Ok(()) },
-		Entry::Occupied(_) => { Err(ParseError::for_token(blob, key, format!("duplicate {}: {}", map_name, key))) }
+		Entry::Occupied(x) => {
+			if x.get() == &value.into() {
+				Ok(())
+			} else {
+				Err(ParseError::for_token(blob, key, format!("duplicate {} with different value: {}", map_name, key)))
+			}
+		}
 	}
 }
 
+pub fn collect_packages<'a, 'b, I: Iterator<Item = Result<Option<(&'a str, &'b str)>, ParseError>>>(scrinfo_lines: I) -> Result<Vec<Package>, ParseError> {
+	unimplemented!();
+}
+
 pub fn parse_srcinfo(blob: &str) -> Result<Package, ParseError> {
-	let mut name:    Option<String>     = Default::default();
-	let mut version: Option<VersionBuf> = Default::default();
-
-	let mut url:           Option<String> = Default::default();
-	let mut description:   Option<String> = Default::default();
-	let mut licenses:      Vec<String>    = Default::default();
-
-	let mut groups:        Vec<String> = Default::default();
-	let mut backup:        Vec<String> = Default::default();
-
-	let mut provides:      Map<String, Option<VersionBuf>> = Default::default();
-	let mut conflicts:     Map<String, Option<VersionConstraint>> = Default::default();
-	let mut replaces:      Map<String, Option<VersionConstraint>> = Default::default();
-
-	let mut depends:       Map<String, Option<VersionConstraint>> = Default::default();
-	let mut make_depends:  Map<String, Option<VersionConstraint>> = Default::default();
-	let mut check_depends: Map<String, Option<VersionConstraint>> = Default::default();
+	let mut package = PartialPackage::default();
 
 	for entry in iterate_info(blob) {
 		if let Some((key, value)) = entry? {
 			if false {}
-			else if key == "pkgname"     { set_once_err(&mut name, value.into(), blob, key)? }
-			else if key == "version"     { set_once_err(&mut version, Version::from_str(value).into(), blob, key)? }
-			else if key == "url"         { set_once_err(&mut url, value.into(), blob, key)? }
-			else if key == "description" { set_once_err(&mut description, value.into(), blob, key)? }
+			else if key == "pkgname"     { set_once_err(&mut package.name, value.into(), blob, key)? }
+			else if key == "pkgver"      { set_once_err(&mut package.version, Version::from_str(value).into(), blob, key)? }
+			else if key == "url"         { set_once_err(&mut package.url, value.into(), blob, key)? }
+			else if key == "description" { set_once_err(&mut package.description, value.into(), blob, key)? }
 
 
-			else if key == "licenses"      { licenses.push(value.into()); }
-			else if key == "groups"        { groups.push(value.into()); }
-			else if key == "backup"        { backup.push(value.into()); }
+			else if key == "licenses"      { package.licenses.get_or_default().push(value.into()); }
+			else if key == "groups"        { package.groups.get_or_default().push(value.into()); }
+			else if key == "backup"        { package.backup.get_or_default().push(value.into()); }
 
-			else if key == "provides"      { insert_err(&mut provides, "provides", blob, parse_provides(value))? }
-			else if key == "conflicts"     { insert_err(&mut conflicts, "conflicts", blob, parse_depends(value))? }
+			else if key == "provides"      { insert_err(package.provides.get_or_default(),  "provides",  blob, parse_provides(value))? }
+			else if key == "conflicts"     { insert_err(package.conflicts.get_or_default(), "conflicts", blob, parse_depends(value))? }
+			else if key == "replaces"      { insert_err(package.replaces.get_or_default(),  "replaces",  blob, parse_depends(value))? }
 
-			else if key == "replaces"      { insert_err(&mut replaces,      "replaces",      blob, parse_depends(value))? }
-			else if key == "depends"       { insert_err(&mut depends,       "depends",       blob, parse_depends(value))? }
-			else if key == "make_depends"  { insert_err(&mut make_depends,  "make_depends",  blob, parse_depends(value))? }
-			else if key == "check_depends" { insert_err(&mut check_depends, "check_depends", blob, parse_depends(value))? }
+			else if key == "depends"       { insert_err(package.depends.get_or_default(),       "depends",       blob, parse_depends(value))? }
+			else if key == "opt_depends"   { insert_err(package.opt_depends.get_or_default(),   "opt_depends",   blob, parse_depends(value))? }
+			else if key == "make_depends"  { insert_err(package.make_depends.get_or_default(),  "make_depends",  blob, parse_depends(value))? }
+			else if key == "check_depends" { insert_err(package.check_depends.get_or_default(), "check_depends", blob, parse_depends(value))? }
 		}
 	}
 
-	Ok(Package {
-		name:    name.ok_or_else(|| ParseError::whole_blob(blob, "no pkgname found"))?,
-		version: version.ok_or_else(|| ParseError::whole_blob(blob, "no pkgver found"))?,
-		url, description, licenses,
-		groups, backup,
-		provides, conflicts, replaces,
-		depends, make_depends, check_depends,
-	})
+	package.into_package().map_err(|e| ParseError::whole_blob(blob, e))
 }
 
 /// Find all .SRCINFO files in a given directory.
