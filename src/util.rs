@@ -147,7 +147,14 @@ impl<'a> ConsumableStr<'a> for &'a str {
 
 #[cfg(test)]
 mod tests {
-	use super::ConsumableStr;
+	use super::*;
+
+	#[test]
+	fn test_get_or_default() {
+		let mut i: Option<i32> = None;
+		assert_eq!(i.get_or_default(), &0);
+		assert_eq!(i, Some(0));
+	}
 
 	#[test]
 	fn consume_front_n() {
