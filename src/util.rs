@@ -23,6 +23,22 @@
 
 use std::str::pattern::{Pattern,ReverseSearcher,Searcher,SearchStep};
 
+pub trait DefaultOption {
+	type Item;
+
+	fn get_or_default(&mut self) -> &mut Self::Item;
+}
+
+
+impl<T: Default> DefaultOption for Option<T>
+{
+	type Item = T;
+
+	fn get_or_default(&mut self) -> &mut T {
+		self.get_or_insert_with(|| T::default())
+	}
+}
+
 pub trait ConsumableStr<'a> : Copy {
 	fn consume_front_n(&mut self, n: usize) -> Option<&'a str>;
 	fn consume_back_n(&mut self, n: usize) -> Option<&'a str>;
