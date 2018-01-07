@@ -5,7 +5,7 @@ use super::parse::consume_pkgrel;
 use std;
 
 /// A view into a string, split into version parts.
-#[derive(Debug)]
+#[derive(Copy,Clone,Debug)]
 pub struct Version<'a> {
 	pub epoch: i32,
 	pub pkgver: &'a str,
@@ -13,7 +13,7 @@ pub struct Version<'a> {
 }
 
 /// A package version with epoch, pkgver and pkgrel.
-#[derive(Debug)]
+#[derive(Clone,Debug)]
 pub struct VersionBuf {
 	pub epoch: i32,
 	pub pkgver: String,

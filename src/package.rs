@@ -25,7 +25,7 @@ use std::collections::BTreeMap as Map;
 
 use version::VersionBuf;
 
-#[derive(Debug,Eq,PartialEq)]
+#[derive(Copy,Clone,Debug,Eq,PartialEq)]
 pub enum Constraint {
 	Equal,
 	Greater,
@@ -34,19 +34,19 @@ pub enum Constraint {
 	LessEqual,
 }
 
-#[derive(Debug,Eq,PartialEq)]
+#[derive(Clone,Debug,Eq,PartialEq)]
 pub struct VersionedTarget {
 	pub name: String,
 	pub version: VersionBuf,
 }
 
-#[derive(Debug,Eq,PartialEq)]
+#[derive(Clone,Debug,Eq,PartialEq)]
 pub struct VersionConstraint {
 	pub version:    VersionBuf,
 	pub constraint: Constraint,
 }
 
-#[derive(Debug,Eq,PartialEq)]
+#[derive(Clone,Debug,Eq,PartialEq)]
 pub struct Package {
 	pub name:          String,
 	pub version:       VersionBuf,
