@@ -23,9 +23,11 @@
 
 use std::collections::BTreeMap as Map;
 use std::collections::btree_map::Entry as Entry;
+use std::mem;
 use std::error;
 use std::ffi::OsStr;
 use std::fmt;
+use std::result;
 use std::fs::File;
 use std::io::{Error as IoError, Read};
 use std::path::{Path,PathBuf};
@@ -39,6 +41,7 @@ use parse::{parse_depends, parse_provides};
 use util::{ConsumableStr, DefaultOption};
 use version::{Version};
 
+type Result<T> = result::Result<T, ParseError>;
 
 #[derive(Debug)]
 pub enum ReadDbError {
@@ -71,29 +74,29 @@ impl error::Error for ReadDbError {
 /// INFO blobs consist of 'key = value' lines.
 /// All whitespace around keys or values is removed.
 ///
-/// Empty lines are yielded as `None`.
-/// Data lines are yielded as `Some((&str, &str))`.
-pub fn iterate_info<'a>(blob: &'a str) -> impl Iterator<Item = Result<Option<(&'a str, &'a str)>, ParseError>> {
-	blob.split('\n').map(move |line| {
+/// Empty lines are discarded.
+pub fn iterate_info<'a>(blob: &'a str) -> impl Iterator<Item = Result<(&'a str, &'a str)>> {
+	blob.split('\n').filter_map(move |line| {
 		let line = line.trim();
 		if line.is_empty() {
-			return Ok(None);
+			return None;
 		}
-		line.partition('=').map(|(key, _, value)| Some((key.trim(), value.trim())))
-		.ok_or_else(|| ParseError::for_token(blob, line, "expected 'key = value' or empty line"))
+		let result = line.partition('=').map(|(key, _, value)| (key.trim(), value.trim()));
+		let result = result.ok_or_else(|| ParseError::for_token(blob, line, "expected 'key = value' or empty line"));
+		Some(result)
 	})
 }
 
-fn set_once_err<T>(option: &mut Option<T>, value: T, blob: &str, key: &str) -> Result<(), ParseError> {
+fn set_once_err<T>(option: &mut Option<T>, value: T, key: &str) -> Result<()> {
 	if option.is_some() {
-		Err(ParseError::for_token(blob, key, format!("duplicate key: {}", key)))
+		Err(ParseError{message: format!("duplicate key: {}", key), token_start: 0, token_end: 0})
 	} else {
 		*option = Some(value);
 		Ok(())
 	}
 }
 
-fn insert_err<V: Eq, IV: Into<V>>(map: &mut Map<String,V>, map_name: &str, blob: &str, entry: (&str, IV)) -> Result<(), ParseError> {
+fn insert_err<V: Eq, IV: Into<V>>(map: &mut Map<String,V>, map_name: &str, entry: (&str, IV)) -> Result<()> {
 	let (key, value) = entry;
 	match map.entry(key.into()) {
 		Entry::Vacant(x)   => { x.insert(value.into()); Ok(()) },
@@ -101,59 +104,146 @@ fn insert_err<V: Eq, IV: Into<V>>(map: &mut Map<String,V>, map_name: &str, blob:
 			if x.get() == &value.into() {
 				Ok(())
 			} else {
-				Err(ParseError::for_token(blob, key, format!("duplicate {} with different value: {}", map_name, key)))
+				Err(ParseError{message: format!("duplicate {} with different value: {}", map_name, key), token_start: 0, token_end: 0})
 			}
 		}
 	}
 }
 
-pub fn collect_packages<'a, 'b, I: Iterator<Item = Result<Option<(&'a str, &'b str)>, ParseError>>>(scrinfo_lines: I) -> Result<Vec<Package>, ParseError> {
-	unimplemented!();
+pub struct PackageIterator<'a, DataIterator: Iterator<Item = Result<(&'a str, &'a str)>>> {
+	data_iterator: DataIterator,
+	base_done: bool,
+	base: PartialPackage,
+	next_name: Option<&'a str>,
 }
 
-pub fn parse_srcinfo(blob: &str) -> Result<Package, ParseError> {
-	let mut package = PartialPackage::default();
+impl<'a, DataIterator> PackageIterator<'a, DataIterator>
+	where DataIterator: Iterator<Item = Result<(&'a str, &'a str)>>
+{
+	pub fn new(data_iterator: DataIterator) -> Self {
+		PackageIterator {
+			data_iterator,
+			base_done: false,
+			base: PartialPackage::default(),
+			next_name: None,
+		}
+	}
 
-	for entry in iterate_info(blob) {
-		if let Some((key, value)) = entry? {
-			if false {}
-			else if key == "pkgname"     { set_once_err(&mut package.name, value.into(), blob, key)? }
-			else if key == "pkgver"      { set_once_err(&mut package.version, Version::from_str(value).into(), blob, key)? }
-			else if key == "url"         { set_once_err(&mut package.url, value.into(), blob, key)? }
-			else if key == "description" { set_once_err(&mut package.description, value.into(), blob, key)? }
+	fn parse_base(&mut self) -> Result<(PartialPackage, &'a str)> {
+		let (package, next_name) = self.parse_package()?;
+		if let Some(next_name) = next_name {
+			Ok((package, next_name))
+		} else {
+			Err(ParseError{message: String::from("missing pkgname"), token_start: 0, token_end: 0})
+		}
+	}
+
+	fn parse_package(&mut self) -> Result<(PartialPackage, Option<&'a str>)> {
+		let mut package = PartialPackage::default();
+
+		while let Some(entry) = self.data_iterator.next() {
+			let (key, value) = entry?;
+			if key == "pkgname" { return Ok((package, Some(value))) }
+			else if key == "pkgver"      { set_once_err(&mut package.version, Version::from_str(value).into(), key)? }
+			else if key == "url"         { set_once_err(&mut package.url, value.into(), key)? }
+			else if key == "description" { set_once_err(&mut package.description, value.into(), key)? }
 
 
 			else if key == "licenses"      { package.licenses.get_or_default().push(value.into()); }
 			else if key == "groups"        { package.groups.get_or_default().push(value.into()); }
 			else if key == "backup"        { package.backup.get_or_default().push(value.into()); }
 
-			else if key == "provides"      { insert_err(package.provides.get_or_default(),  "provides",  blob, parse_provides(value))? }
-			else if key == "conflicts"     { insert_err(package.conflicts.get_or_default(), "conflicts", blob, parse_depends(value))? }
-			else if key == "replaces"      { insert_err(package.replaces.get_or_default(),  "replaces",  blob, parse_depends(value))? }
+			else if key == "provides"      { insert_err(package.provides.get_or_default(),  "provides",  parse_provides(value))? }
+			else if key == "conflicts"     { insert_err(package.conflicts.get_or_default(), "conflicts", parse_depends(value))? }
+			else if key == "replaces"      { insert_err(package.replaces.get_or_default(),  "replaces",  parse_depends(value))? }
 
-			else if key == "depends"       { insert_err(package.depends.get_or_default(),       "depends",       blob, parse_depends(value))? }
-			else if key == "opt_depends"   { insert_err(package.opt_depends.get_or_default(),   "opt_depends",   blob, parse_depends(value))? }
-			else if key == "make_depends"  { insert_err(package.make_depends.get_or_default(),  "make_depends",  blob, parse_depends(value))? }
-			else if key == "check_depends" { insert_err(package.check_depends.get_or_default(), "check_depends", blob, parse_depends(value))? }
+			else if key == "depends"       { insert_err(package.depends.get_or_default(),       "depends",       parse_depends(value))? }
+			else if key == "opt_depends"   { insert_err(package.opt_depends.get_or_default(),   "opt_depends",   parse_depends(value))? }
+			else if key == "make_depends"  { insert_err(package.make_depends.get_or_default(),  "make_depends",  parse_depends(value))? }
+			else if key == "check_depends" { insert_err(package.check_depends.get_or_default(), "check_depends", parse_depends(value))? }
 		}
+
+		Ok((package, None))
+	}
+}
+
+impl<'a, DataIterator> Iterator for PackageIterator<'a, DataIterator>
+	where DataIterator: Iterator<Item = Result<(&'a str, &'a str)>>
+{
+	type Item = Result<Package>;
+
+	fn next(&mut self) -> Option<Result<Package>> {
+		// Make sure the pkgbase is parsed.
+		if !mem::replace(&mut self.base_done, true) {
+			match self.parse_base() {
+				Ok((pkgbase, next_name)) => {
+					self.base      = pkgbase;
+					self.next_name = Some(next_name);
+				},
+				Err(err) => return Some(Err(err)),
+			}
+		}
+
+		// Parse the next package.
+		if let Some(pkgname) = self.next_name {
+			match self.parse_package() {
+				Ok((mut package, next_name)) => {
+					package.name = Some(String::from(pkgname));
+					package.add_base(&self.base);
+					self.next_name = next_name;
+					Some(package.into_package().map_err(|msg| ParseError{message: msg, token_start: 0, token_end: 0}))
+				},
+				Err(err) => Some(Err(err)),
+			}
+		} else {
+			None
+		}
+	}
+}
+
+pub fn parse_srcinfo(blob: &str) -> Result<Package> {
+	let mut package = PartialPackage::default();
+
+	for entry in iterate_info(blob) {
+		let (key, value) = entry?;
+		if false {}
+		else if key == "pkgname"     { set_once_err(&mut package.name, value.into(), key)? }
+		else if key == "pkgver"      { set_once_err(&mut package.version, Version::from_str(value).into(), key)? }
+		else if key == "url"         { set_once_err(&mut package.url, value.into(), key)? }
+		else if key == "description" { set_once_err(&mut package.description, value.into(), key)? }
+
+
+		else if key == "licenses"      { package.licenses.get_or_default().push(value.into()); }
+		else if key == "groups"        { package.groups.get_or_default().push(value.into()); }
+		else if key == "backup"        { package.backup.get_or_default().push(value.into()); }
+
+		else if key == "provides"      { insert_err(package.provides.get_or_default(),  "provides",  parse_provides(value))? }
+		else if key == "conflicts"     { insert_err(package.conflicts.get_or_default(), "conflicts", parse_depends(value))? }
+		else if key == "replaces"      { insert_err(package.replaces.get_or_default(),  "replaces",  parse_depends(value))? }
+
+		else if key == "depends"       { insert_err(package.depends.get_or_default(),       "depends",       parse_depends(value))? }
+		else if key == "opt_depends"   { insert_err(package.opt_depends.get_or_default(),   "opt_depends",   parse_depends(value))? }
+		else if key == "make_depends"  { insert_err(package.make_depends.get_or_default(),  "make_depends",  parse_depends(value))? }
+		else if key == "check_depends" { insert_err(package.check_depends.get_or_default(), "check_depends", parse_depends(value))? }
 	}
 
 	package.into_package().map_err(|e| ParseError::whole_blob(blob, e))
 }
 
 /// Find all .SRCINFO files in a given directory.
-pub fn find_srcinfo(directory: &Path) -> impl Iterator<Item = Result<DirEntry, walkdir::Error>> {
+pub fn find_srcinfo<P: ?Sized + AsRef<Path>>(directory: &P) -> impl Iterator<Item = result::Result<DirEntry, walkdir::Error>> {
 	WalkDir::new(directory).into_iter().filter(|x|
-		match x {
-			&Err(_)        => true,
-			&Ok(ref entry) => entry.file_type().is_file() && entry.path().file_name() == Some(OsStr::new(".SRCINFO")),
+		if let &Ok(ref entry) = x {
+			entry.file_type().is_file() && entry.path().file_name() == Some(OsStr::new(".SRCINFO"))
+		} else {
+			true
 		}
 	)
 }
 
-pub fn read_srcinfo_db(directory: &Path) -> impl Iterator<Item = Result<(String, Package), ReadDbError>> {
+pub fn read_srcinfo_db<P: ?Sized + AsRef<Path>>(directory: &P) -> impl Iterator<Item = result::Result<(String, Package), ReadDbError>> {
 	find_srcinfo(directory).map(|entry| {
-		entry.map_err(|err| ReadDbError::WalkError(err)).and_then(|entry| -> Result<(String, Package), ReadDbError> {
+		entry.map_err(|err| ReadDbError::WalkError(err)).and_then(|entry| -> result::Result<(String, Package), ReadDbError> {
 			let mut file = File::open(entry.path()).map_err(|x| ReadDbError::IoError(entry.path().to_path_buf(), x))?;
 			let mut data = String::new();
 			file.read_to_string(&mut data).map_err(|x| ReadDbError::IoError(entry.path().to_path_buf(), x))?;
@@ -171,26 +261,14 @@ mod tests {
 	fn test_simple() {
 		let blob = ["a=b", "c=d"].join("\n");
 		assert_seq!(iterate_info(&blob), [
-			Ok(Some(("a", "b"))),
-			Ok(Some(("c", "d"))),
+			Ok(("a", "b")),
+			Ok(("c", "d")),
 		])
 	}
 
 	#[test]
 	fn spaces_are_stripped() {
-		assert_seq!(iterate_info(" a   =    b  "), [Ok(Some(("a", "b")))])
-	}
-
-	#[test]
-	fn empty_lines_are_none() {
-		let blob = ["  ", "a=b", "", "c=d", ""].join("\n");
-		assert_seq!(iterate_info(&blob), [
-			Ok(None),
-			Ok(Some(("a", "b"))),
-			Ok(None),
-			Ok(Some(("c", "d"))),
-			Ok(None),
-		])
+		assert_seq!(iterate_info(" a   =    b  "), [Ok(("a", "b"))])
 	}
 
 	#[test]
@@ -198,7 +276,7 @@ mod tests {
 		let blob = ["ab", "a = b"].join("\n");
 		let mut iterator = iterate_info(&blob);
 		assert!(iterator.next().unwrap().is_err());
-		assert_eq!(iterator.next(), Some(Ok(Some(("a", "b")))));
+		assert_eq!(iterator.next(), Some(Ok(("a", "b"))));
 		assert_eq!(iterator.next(), None);
 	}
 
