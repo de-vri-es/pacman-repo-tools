@@ -141,26 +141,28 @@ impl<'a, DataIterator> PackageIterator<'a, DataIterator>
 	fn parse_package(&mut self) -> Result<(PartialPackage, Option<&'a str>)> {
 		let mut package = PartialPackage::default();
 
-		while let Some(entry) = self.data_iterator.next() {
+		for entry in &mut self.data_iterator {
 			let (key, value) = entry?;
-			if key == "pkgname" { return Ok((package, Some(value))) }
-			else if key == "pkgver"      { set_once_err(&mut package.version, Version::from_str(value).into(), key)? }
-			else if key == "url"         { set_once_err(&mut package.url, value.into(), key)? }
-			else if key == "description" { set_once_err(&mut package.description, value.into(), key)? }
+			match key {
+				"pkgname"     => return Ok((package, Some(value))),
+				"pkgver"      => set_once_err(&mut package.version, Version::from_str(value).into(), key)?,
+				"url"         => set_once_err(&mut package.url, value.into(), key)?,
+				"description" => set_once_err(&mut package.description, value.into(), key)?,
 
+				"licenses"      => package.licenses.get_or_default().push(value.into()),
+				"groups"        => package.groups.get_or_default().push(value.into()),
+				"backup"        => package.backup.get_or_default().push(value.into()),
 
-			else if key == "licenses"      { package.licenses.get_or_default().push(value.into()); }
-			else if key == "groups"        { package.groups.get_or_default().push(value.into()); }
-			else if key == "backup"        { package.backup.get_or_default().push(value.into()); }
+				"provides"      => insert_err(package.provides.get_or_default(),  "provides",  parse_provides(value))?,
+				"conflicts"     => insert_err(package.conflicts.get_or_default(), "conflicts", parse_depends(value))?,
+				"replaces"      => insert_err(package.replaces.get_or_default(),  "replaces",  parse_depends(value))?,
 
-			else if key == "provides"      { insert_err(package.provides.get_or_default(),  "provides",  parse_provides(value))? }
-			else if key == "conflicts"     { insert_err(package.conflicts.get_or_default(), "conflicts", parse_depends(value))? }
-			else if key == "replaces"      { insert_err(package.replaces.get_or_default(),  "replaces",  parse_depends(value))? }
-
-			else if key == "depends"       { insert_err(package.depends.get_or_default(),       "depends",       parse_depends(value))? }
-			else if key == "opt_depends"   { insert_err(package.opt_depends.get_or_default(),   "opt_depends",   parse_depends(value))? }
-			else if key == "make_depends"  { insert_err(package.make_depends.get_or_default(),  "make_depends",  parse_depends(value))? }
-			else if key == "check_depends" { insert_err(package.check_depends.get_or_default(), "check_depends", parse_depends(value))? }
+				"depends"       => insert_err(package.depends.get_or_default(),       "depends",       parse_depends(value))?,
+				"opt_depends"   => insert_err(package.opt_depends.get_or_default(),   "opt_depends",   parse_depends(value))?,
+				"make_depends"  => insert_err(package.make_depends.get_or_default(),  "make_depends",  parse_depends(value))?,
+				"check_depends" => insert_err(package.check_depends.get_or_default(), "check_depends", parse_depends(value))?,
+				_               => {}, // ignore unknown keys
+			}
 		}
 
 		Ok((package, None))
@@ -206,25 +208,27 @@ pub fn parse_srcinfo(blob: &str) -> Result<Package> {
 
 	for entry in iterate_info(blob) {
 		let (key, value) = entry?;
-		if false {}
-		else if key == "pkgname"     { set_once_err(&mut package.name, value.into(), key)? }
-		else if key == "pkgver"      { set_once_err(&mut package.version, Version::from_str(value).into(), key)? }
-		else if key == "url"         { set_once_err(&mut package.url, value.into(), key)? }
-		else if key == "description" { set_once_err(&mut package.description, value.into(), key)? }
+		match key {
+			"pkgname"     => set_once_err(&mut package.name, value.into(), key)?,
+			"pkgver"      => set_once_err(&mut package.version, Version::from_str(value).into(), key)?,
+			"url"         => set_once_err(&mut package.url, value.into(), key)?,
+			"description" => set_once_err(&mut package.description, value.into(), key)?,
 
 
-		else if key == "licenses"      { package.licenses.get_or_default().push(value.into()); }
-		else if key == "groups"        { package.groups.get_or_default().push(value.into()); }
-		else if key == "backup"        { package.backup.get_or_default().push(value.into()); }
+			"licenses"      => package.licenses.get_or_default().push(value.into()),
+			"groups"        => package.groups.get_or_default().push(value.into()),
+			"backup"        => package.backup.get_or_default().push(value.into()),
 
-		else if key == "provides"      { insert_err(package.provides.get_or_default(),  "provides",  parse_provides(value))? }
-		else if key == "conflicts"     { insert_err(package.conflicts.get_or_default(), "conflicts", parse_depends(value))? }
-		else if key == "replaces"      { insert_err(package.replaces.get_or_default(),  "replaces",  parse_depends(value))? }
+			"provides"      => insert_err(package.provides.get_or_default(),  "provides",  parse_provides(value))?,
+			"conflicts"     => insert_err(package.conflicts.get_or_default(), "conflicts", parse_depends(value))?,
+			"replaces"      => insert_err(package.replaces.get_or_default(),  "replaces",  parse_depends(value))?,
 
-		else if key == "depends"       { insert_err(package.depends.get_or_default(),       "depends",       parse_depends(value))? }
-		else if key == "opt_depends"   { insert_err(package.opt_depends.get_or_default(),   "opt_depends",   parse_depends(value))? }
-		else if key == "make_depends"  { insert_err(package.make_depends.get_or_default(),  "make_depends",  parse_depends(value))? }
-		else if key == "check_depends" { insert_err(package.check_depends.get_or_default(), "check_depends", parse_depends(value))? }
+			"depends"       => insert_err(package.depends.get_or_default(),       "depends",       parse_depends(value))?,
+			"opt_depends"   => insert_err(package.opt_depends.get_or_default(),   "opt_depends",   parse_depends(value))?,
+			"make_depends"  => insert_err(package.make_depends.get_or_default(),  "make_depends",  parse_depends(value))?,
+			"check_depends" => insert_err(package.check_depends.get_or_default(), "check_depends", parse_depends(value))?,
+			_               => {},
+		}
 	}
 
 	package.into_package().map_err(|e| ParseError::whole_blob(blob, e))
