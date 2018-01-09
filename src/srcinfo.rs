@@ -110,7 +110,7 @@ fn insert_err<V: Eq, IV: Into<V>>(map: &mut Map<String,V>, map_name: &str, entry
 	}
 }
 
-pub struct PackageIterator<'a, DataIterator: Iterator<Item = Result<(&'a str, &'a str)>>> {
+pub struct PackageIterator<'a, DataIterator> {
 	data_iterator: DataIterator,
 	base_done: bool,
 	base: PartialPackage,
