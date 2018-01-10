@@ -1,7 +1,7 @@
 use std::error;
 use std::fmt;
 
-#[derive(Debug, Eq, PartialEq, Ord, PartialOrd)]
+#[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
 pub struct ParseError {
 	pub message: String,
 	pub token_start: usize,
@@ -17,6 +17,10 @@ impl ParseError {
 
 	pub fn whole_blob<S: Into<String>>(blob: &str, message: S) -> ParseError {
 		ParseError{message: message.into(), token_start: blob.len(), token_end: blob.len()}
+	}
+
+	pub fn no_token<S: Into<String>>(message: S) -> ParseError {
+		ParseError{message: message.into(), token_start: 0, token_end: 0}
 	}
 
 	pub fn extract_token<'a>(&self, data: &'a str) -> &'a str {

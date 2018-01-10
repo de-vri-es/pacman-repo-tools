@@ -23,6 +23,7 @@
 
 #![feature(pattern)]
 #![feature(conservative_impl_trait)]
+#![feature(generators)]
 
 #[macro_use]
 mod macros;

@@ -94,6 +94,7 @@ pub struct PartialPackage {
 impl PartialPackage {
 	/// Try to create a package from the partial package.
 	pub fn into_package(self) -> Result<Package, String> {
+		println!("{:?}", self);
 		Ok(Package {
 			name:    self.name.ok_or_else(||    String::from("missing pkgname"))?,
 			version: self.version.ok_or_else(|| String::from("missing pkgver"))?,
