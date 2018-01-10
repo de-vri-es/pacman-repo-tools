@@ -1,5 +1,6 @@
 use std;
 use std::borrow::Cow;
+use std::collections::btree_map::Entry as BTreeMapEntry;
 use std::collections::Bound::{Included, Unbounded};
 
 trait EndPtr {
@@ -48,48 +49,63 @@ impl<'a> AsRef<[u8]> for Entry<'a> {
 
 #[derive(Default)]
 pub struct StringTracker<'a> {
-	map: std::collections::BTreeMap<*const u8, Entry<'a>>
+	map: std::cell::UnsafeCell<std::collections::BTreeMap<*const u8, Entry<'a>>>
 }
 
 impl<'a> StringTracker<'a> {
 	pub fn new() -> Self { Self::default() }
 
+	fn map(&self) -> &std::collections::BTreeMap<*const u8, Entry<'a>> {
+		unsafe { &*self.map.get() }
+	}
+
+	fn map_mut(&self) -> &mut std::collections::BTreeMap<*const u8, Entry<'a>> {
+		unsafe { &mut *self.map.get() }
+	}
+
 	pub fn has_overlap<S: ?Sized + AsRef<[u8]>>(&self, data: &S) -> bool {
 		let data = data.as_ref();
 		// Last element with start < data.end_ptr()
-		let conflict = self.map.range(..data.end_ptr()).next_back();
-		if let Some((_key, conflict)) = conflict {
-			// If conflict doesn't end before data starts, it's a conflict.
-			// Though end is one-past the end, so end == start is also okay.
-			conflict.end_ptr() > data.start_ptr()
-		} else {
-			false
+		let conflict = match self.map().range(..data.end_ptr()).next_back() {
+			None                => return false,
+			Some((_key, entry)) => entry,
+		};
+
+		// If conflict doesn't end before data starts, it's a conflict.
+		// Though end is one-past the end, so end == start is also okay.
+		conflict.end_ptr() > data.start_ptr()
+	}
+
+	pub fn insert(&self, entry: Entry<'a>) -> Result<(&str), ()> {
+		if self.has_overlap(&entry.data.as_ref()) { return Err(()) }
+		match self.map_mut().entry(entry.key()) {
+			BTreeMapEntry::Vacant(x)   => Ok(x.insert(entry).data.as_ref()),
+			BTreeMapEntry::Occupied(_) => unreachable!(),
 		}
 	}
 
-	pub fn insert(&mut self, entry: Entry<'a>) -> Result<(), ()> {
-		if self.has_overlap(&entry.data.as_ref()) { return Err(()) }
-		self.map.insert(entry.key(), entry);
-		Ok(())
-	}
-
-	pub fn insert_borrowed<S: ?Sized + AsRef<str>>(&mut self, data: &'a S, source: Source) -> Result<(), ()> {
+	pub fn insert_borrowed<'out, 'slf: 'out, S: ?Sized + AsRef<str>>(&'slf self, data: &'a S, source: Source) -> Result<(&'out str), ()> {
 		self.insert(Entry{data: Cow::Borrowed(data.as_ref().clone()), source})
 	}
 
-	pub fn insert_owned<S: Into<String>>(&mut self, data: S, source: Source) -> Result<(), ()> {
+	pub fn insert_move<'out, 'slf: 'out, S: Into<String>>(&'slf self, data: S, source: Source) -> Result<(&'out str), ()> {
 		self.insert(Entry{data: Cow::Owned(data.into()), source})
+	}
+
+	fn lower_bound(&self, bound: *const u8) -> Option<&Entry<'a>> {
+		// Get the last element where start <= bound
+		let (_key, value) = self.map().range((Unbounded, Included(bound))).next_back()?;
+		Some(&value)
 	}
 
 	pub fn get(&self, data: &str) -> Option<&Entry<'a>> {
 		// Get the last element where start_ptr <= data.start_ptr
-		let entry = self.map.range((Unbounded, Included(data.start_ptr()))).next_back();
-		if let Some((_key, entry)) = entry {
-			if entry.end_ptr() <= entry.end_ptr() {
-				return Some(entry)
-			}
+		let entry = self.lower_bound(data.start_ptr())?;
+		if entry.end_ptr() <= entry.end_ptr() {
+			return Some(entry)
+		} else {
+			None
 		}
-		None
 	}
 
 	pub fn get_source(&self, data: &str) -> Option<&Source> {
@@ -107,15 +123,24 @@ mod test {
 
 	#[test]
 	fn test_overlap() {
-		let mut pool = StringTracker::default();
+		let pool = StringTracker::default();
 		let data = "aap noot mies";
 		assert_eq!(pool.has_overlap(data), false);
 		assert_eq!(pool.has_overlap(&data[3..8]), false);
-		assert_eq!(pool.insert_borrowed::<str>(data, Source::Other), Ok(()));
+		assert_eq!(pool.insert_borrowed::<str>(data, Source::Other), Ok(data));
 		assert_eq!(pool.has_overlap(data), true);
 		assert_eq!(pool.has_overlap(&data[3..8]), true);
 		assert_eq!(pool.insert_borrowed::<str>(data,        Source::Other), Err(()));
 		assert_eq!(pool.insert_borrowed::<str>(&data[3..4], Source::Other), Err(()));
+	}
+
+	#[test]
+	fn test_string() {
+		let pool = StringTracker::default();
+		let data: &str = pool.insert_move("aap noot mies", Source::Other).unwrap();
+		assert_eq!(pool.has_overlap(data), true);
+		assert_eq!(pool.has_overlap(&data[3..8]), true);
+		assert_eq!(pool.has_overlap("aap"), false);
 	}
 
 }
