@@ -132,14 +132,14 @@ fn parse_data_line<'a, I>(data_iterator: &mut std::iter::Peekable<I>, package: &
 		"groups"        => package.groups.get_or_default().push(value.into()),
 		"backup"        => package.backup.get_or_default().push(value.into()),
 
-		"provides"      => insert_err(package.provides.get_or_default(),  "provides",  parse_provides(value))?,
-		"conflicts"     => insert_err(package.conflicts.get_or_default(), "conflicts", parse_depends(value))?,
-		"replaces"      => insert_err(package.replaces.get_or_default(),  "replaces",  parse_depends(value))?,
+		"provides"      => insert_err(package.provides.get_or_default(),  key, parse_provides(value))?,
+		"conflicts"     => insert_err(package.conflicts.get_or_default(), key, parse_depends(value))?,
+		"replaces"      => insert_err(package.replaces.get_or_default(),  key, parse_depends(value))?,
 
-		"depends"       => insert_err(package.depends.get_or_default(),       "depends",       parse_depends(value))?,
-		"opt_depends"   => insert_err(package.opt_depends.get_or_default(),   "opt_depends",   parse_depends(value))?,
-		"make_depends"  => insert_err(package.make_depends.get_or_default(),  "make_depends",  parse_depends(value))?,
-		"check_depends" => insert_err(package.check_depends.get_or_default(), "check_depends", parse_depends(value))?,
+		"depends"       => insert_err(package.depends.get_or_default(),       key, parse_depends(value))?,
+		"opt_depends"   => insert_err(package.opt_depends.get_or_default(),   key, parse_depends(value))?,
+		"make_depends"  => insert_err(package.make_depends.get_or_default(),  key, parse_depends(value))?,
+		"check_depends" => insert_err(package.check_depends.get_or_default(), key, parse_depends(value))?,
 		_               => {}, // ignore unknown keys
 	}
 
