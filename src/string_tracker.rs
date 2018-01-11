@@ -7,63 +7,11 @@ use std::io::Read;
 use std::path::{Path,PathBuf};
 use std::str::from_utf8_unchecked;
 
-trait PointerRange {
-	type Type;
-
-	fn start_ptr(&self) -> *const Self::Type;
-	fn end_ptr(&self)   -> *const Self::Type;
-}
-
-impl<T: AsRef<[u8]>> PointerRange for T {
-	type Type = u8;
-	fn start_ptr(&self) -> *const u8 { self.as_ref().as_ptr() }
-	fn end_ptr(&self)   -> *const u8 { unsafe { self.as_ref().as_ptr().add(self.as_ref().len()) } }
-}
-
 #[derive(Clone, Eq, PartialEq, Ord, PartialOrd)]
 pub enum Source<'a, 'path> {
 	Other,
 	ExpandedFrom(&'a str),
 	File(&'path Path),
-}
-
-pub enum SourceStorage<'a> {
-	Other,
-	ExpandedFrom(&'a str),
-	File(PathBuf),
-}
-
-impl<'a, 'path> Source<'a, 'path> {
-	fn to_storage(self) -> SourceStorage<'a> {
-		match self {
-			Source::Other                => SourceStorage::Other,
-			Source::ExpandedFrom(string) => SourceStorage::ExpandedFrom(string),
-			Source::File(path)           => SourceStorage::File(path.to_owned()),
-		}
-	}
-}
-
-impl<'a> SourceStorage<'a> {
-	fn to_source<'b>(&'b self) -> Source<'a, 'b> {
-		match self {
-			&SourceStorage::Other                    => Source::Other,
-			&SourceStorage::ExpandedFrom(ref string) => Source::ExpandedFrom(string),
-			&SourceStorage::File(ref path)           => Source::File(path),
-		}
-	}
-}
-
-pub struct Entry<'a> {
-	data: Cow<'a, [u8]>,
-	source: SourceStorage<'a>,
-}
-
-/// Read a file into a string.
-fn read_text_file<P: ?Sized + AsRef<Path>>(path: &P) -> std::io::Result<String> {
-	let mut file = File::open(path)?;
-	let mut data = String::new();
-	file.read_to_string(&mut data)?;
-	return Ok(data);
 }
 
 /// Tracker for strings with metadata.
@@ -81,6 +29,60 @@ pub struct StringTracker<'a> {
 
 impl<'a> StringTracker<'a> {
 	pub fn new() -> Self { Self::default() }
+	/// Insert a borrowed reference in the tracker.
+	///
+	/// Fails if the string is empty or if it is already tracked.
+	pub fn insert_borrow<'path, S: ?Sized + AsRef<str>>(&self, data: &'a S, source: Source<'a, 'path>) -> Result<&str, ()> {
+		let slice = self.insert_with_source(Cow::Borrowed(data.as_ref().as_bytes()), source)?;
+		Ok(unsafe { from_utf8_unchecked(slice) })
+	}
+
+	/// Move a string into the tracker.
+	///
+	/// Fails if the string is empty.
+	pub fn insert_move<'path, S: Into<String>>(&self, data: S, source: Source<'a, 'path>) -> Result<&str, ()> {
+		// New string can't be in the map yet, but empty string can not be inserted.
+		let slice = self.insert_with_source(Cow::Owned(data.into().into_bytes()), source)?;
+		Ok(unsafe { from_utf8_unchecked(slice) })
+	}
+
+	/// Read a file and insert it into the tracker.
+	///
+	/// Fails if reading the file fails, or if the file is empty.
+	pub fn insert_file<P: Into<PathBuf>>(&self, path: P) -> std::io::Result<&str> {
+		let path = path.into();
+		let data = read_text_file(&path)?;
+		if data.is_empty() {
+			Err(std::io::Error::new(std::io::ErrorKind::UnexpectedEof, "file is empty"))
+		} else {
+			Ok(unsafe { from_utf8_unchecked(self.insert_unsafe(Cow::Owned(data.into_bytes()), SourceStorage::File(path))) })
+		}
+	}
+
+	/// Check if a string slice is tracked.
+	pub fn is_tracked(&self, data: &str) -> bool {
+		self.get_entry(data).is_some()
+	}
+
+	/// Get the whole tracked slice and source information for a string slice.
+	pub fn get(&self, data: &str) -> Option<(&str, Source)> {
+		self.get_entry(data).map(|entry| {
+			let string = unsafe { from_utf8_unchecked(&entry.data) };
+			(string, entry.source.to_source())
+		})
+	}
+
+	/// Get the source information for a string slice.
+	pub fn get_source(&self, data: &str) -> Option<Source> {
+		self.get_entry(data).map(|entry| entry.source.to_source())
+	}
+
+	/// Get the whole tracked slice for a string slice.
+	pub fn get_whole_slice(&self, data: &str) -> Option<&str> {
+		self.get_entry(data).map(|entry| unsafe { from_utf8_unchecked(&entry.data) })
+	}
+
+// private:
 
 	/// Get the map from the UnsafeCell.
 	fn map(&self) -> &std::collections::BTreeMap<*const u8, Entry<'a>> {
@@ -153,59 +155,58 @@ impl<'a> StringTracker<'a> {
 		if data.is_empty() || self.has_overlap(data.as_ref()) { return Err(()) }
 		Ok(unsafe { self.insert_unsafe(data, source.to_storage()) })
 	}
+}
 
-	/// Insert a borrowed reference in the tracker.
-	///
-	/// Fails if the string is empty or if it is already tracked.
-	pub fn insert_borrow<'path, S: ?Sized + AsRef<str>>(&self, data: &'a S, source: Source<'a, 'path>) -> Result<&str, ()> {
-		let slice = self.insert_with_source(Cow::Borrowed(data.as_ref().as_bytes()), source)?;
-		Ok(unsafe { from_utf8_unchecked(slice) })
-	}
+trait PointerRange {
+	type Type;
 
-	/// Move a string into the tracker.
-	///
-	/// Fails if the string is empty.
-	pub fn insert_move<'path, S: Into<String>>(&self, data: S, source: Source<'a, 'path>) -> Result<&str, ()> {
-		// New string can't be in the map yet, but empty string can not be inserted.
-		let slice = self.insert_with_source(Cow::Owned(data.into().into_bytes()), source)?;
-		Ok(unsafe { from_utf8_unchecked(slice) })
-	}
+	fn start_ptr(&self) -> *const Self::Type;
+	fn end_ptr(&self)   -> *const Self::Type;
+}
 
-	/// Read a file and insert it into the tracker.
-	///
-	/// Fails if reading the file fails, or if the file is empty.
-	pub fn insert_file<P: Into<PathBuf>>(&self, path: P) -> std::io::Result<&str> {
-		let path = path.into();
-		let data = read_text_file(&path)?;
-		if data.is_empty() {
-			Err(std::io::Error::new(std::io::ErrorKind::UnexpectedEof, "file is empty"))
-		} else {
-			Ok(unsafe { from_utf8_unchecked(self.insert_unsafe(Cow::Owned(data.into_bytes()), SourceStorage::File(path))) })
+impl<T: AsRef<[u8]>> PointerRange for T {
+	type Type = u8;
+	fn start_ptr(&self) -> *const u8 { self.as_ref().as_ptr() }
+	fn end_ptr(&self)   -> *const u8 { unsafe { self.as_ref().as_ptr().add(self.as_ref().len()) } }
+}
+
+pub enum SourceStorage<'a> {
+	Other,
+	ExpandedFrom(&'a str),
+	File(PathBuf),
+}
+
+impl<'a, 'path> Source<'a, 'path> {
+	fn to_storage(self) -> SourceStorage<'a> {
+		match self {
+			Source::Other                => SourceStorage::Other,
+			Source::ExpandedFrom(string) => SourceStorage::ExpandedFrom(string),
+			Source::File(path)           => SourceStorage::File(path.to_owned()),
 		}
 	}
+}
 
-	/// Check if a string slice is tracked.
-	pub fn is_tracked(&self, data: &str) -> bool {
-		self.get_entry(data).is_some()
+impl<'a> SourceStorage<'a> {
+	fn to_source<'b>(&'b self) -> Source<'a, 'b> {
+		match self {
+			&SourceStorage::Other                    => Source::Other,
+			&SourceStorage::ExpandedFrom(ref string) => Source::ExpandedFrom(string),
+			&SourceStorage::File(ref path)           => Source::File(path),
+		}
 	}
+}
 
-	/// Get the whole tracked slice and source information for a string slice.
-	pub fn get(&self, data: &str) -> Option<(&str, Source)> {
-		self.get_entry(data).map(|entry| {
-			let string = unsafe { from_utf8_unchecked(&entry.data) };
-			(string, entry.source.to_source())
-		})
-	}
+pub struct Entry<'a> {
+	data: Cow<'a, [u8]>,
+	source: SourceStorage<'a>,
+}
 
-	/// Get the source information for a string slice.
-	pub fn get_source(&self, data: &str) -> Option<Source> {
-		self.get_entry(data).map(|entry| entry.source.to_source())
-	}
-
-	/// Get the whole tracked slice for a string slice.
-	pub fn get_whole_slice(&self, data: &str) -> Option<&str> {
-		self.get_entry(data).map(|entry| unsafe { from_utf8_unchecked(&entry.data) })
-	}
+/// Read a file into a string.
+fn read_text_file<P: ?Sized + AsRef<Path>>(path: &P) -> std::io::Result<String> {
+	let mut file = File::open(path)?;
+	let mut data = String::new();
+	file.read_to_string(&mut data)?;
+	return Ok(data);
 }
 
 #[cfg(test)]
