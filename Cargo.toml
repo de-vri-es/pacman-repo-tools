@@ -8,3 +8,4 @@ authors     = ["Maarten de Vries <maarten@de-vri.es>"]
 [dependencies]
 maplit = "*"
 walkdir = "*"
+string-tracker = {git = "https://github.com/de-vri-es/rust-string-tracker"}

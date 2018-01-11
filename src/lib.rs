@@ -35,10 +35,11 @@ pub mod error;
 pub mod package;
 pub mod srcinfo;
 pub mod version;
-pub mod string_tracker;
 
 mod parse;
 mod util;
+
+extern crate string_tracker;
 
 #[cfg(test)]
 #[macro_use(btreemap)]
