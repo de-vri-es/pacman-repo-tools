@@ -27,7 +27,6 @@ pub enum Source<'a, 'path> {
 	File(&'path Path),
 }
 
-#[derive(Clone, Eq, PartialEq, Ord, PartialOrd)]
 pub enum SourceStorage<'a> {
 	Other,
 	ExpandedFrom(&'a str),
