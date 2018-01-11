@@ -54,7 +54,6 @@ impl<'a> SourceStorage<'a> {
 	}
 }
 
-#[derive(Clone, Eq, PartialEq, Ord, PartialOrd)]
 pub struct Entry<'a> {
 	data: Cow<'a, [u8]>,
 	source: SourceStorage<'a>,
