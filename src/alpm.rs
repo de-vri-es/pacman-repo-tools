@@ -35,14 +35,14 @@ fn parse_key(line: &str) -> Option<&str> {
 	}
 }
 
-pub fn parse_dict<'a>(blob: &'a str) -> Result<BTreeMap<&'a str, Vec<&'a str>>, ParseError> {
+pub fn parse_dict(blob: &str) -> Result<BTreeMap<&str, Vec<&str>>, ParseError> {
 	// Iterator over trimmed lines, skipping empty lines.
 	let mut lines  = blob.split('\n').map(|x| x.trim()).filter(|x| !x.is_empty());
 
 	// Parse a key from the first line.
 	let mut key = match lines.next() {
 		None       => return Ok(BTreeMap::default()),
-		Some(line) => parse_key(line).ok_or(ParseError::for_token(blob, line, "expected first non-empty line to be a key in the format %NAME%"))?,
+		Some(line) => parse_key(line).ok_or(ParseError::with_token(line, "expected first non-empty line to be a key in the format %NAME%"))?,
 	};
 
 	// Loop until all lines are processed.

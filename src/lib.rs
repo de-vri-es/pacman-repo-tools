@@ -26,6 +26,7 @@
 #![feature(generators)]
 #![feature(pattern)]
 #![feature(pointer_methods)]
+#![feature(universal_impl_trait)]
 
 #[macro_use]
 mod macros;

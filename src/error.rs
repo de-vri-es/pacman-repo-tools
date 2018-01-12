@@ -1,40 +1,32 @@
-use std::error;
-use std::fmt;
+use std;
 
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
-pub struct ParseError {
+pub struct ParseError<'a> {
 	pub message: String,
-	pub token_start: usize,
-	pub token_end:   usize,
+	pub token: Option<&'a str>,
 }
 
-impl ParseError {
-	pub fn for_token<S: Into<String>>(blob: &str, token: &str, message: S) -> ParseError {
-		let token_start = token.as_ptr() as usize - blob.as_ptr() as usize;
-		let token_end   = token_start + token.len();
-		ParseError{message: message.into(), token_start, token_end}
+impl<'a> ParseError<'a> {
+	pub fn new(message: impl Into<String>, token: Option<&'a str>) -> ParseError<'a> {
+		ParseError{message: message.into(), token: token}
 	}
 
-	pub fn whole_blob<S: Into<String>>(blob: &str, message: S) -> ParseError {
-		ParseError{message: message.into(), token_start: blob.len(), token_end: blob.len()}
+	pub fn with_token(token: &'a str, message: impl Into<String>) -> ParseError<'a> {
+		ParseError::new(message, Some(token))
 	}
 
-	pub fn no_token<S: Into<String>>(message: S) -> ParseError {
-		ParseError{message: message.into(), token_start: 0, token_end: 0}
-	}
-
-	pub fn extract_token<'a>(&self, data: &'a str) -> &'a str {
-		&data[self.token_start..self.token_end]
+	pub fn no_token(message: impl Into<String>) -> ParseError<'a> {
+		ParseError::new(message, None)
 	}
 }
 
-impl fmt::Display for ParseError {
-	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+impl<'a> std::fmt::Display for ParseError<'a> {
+	fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
 		f.write_str(&self.message)
 	}
 }
 
-impl error::Error for ParseError {
-	fn description(&self) -> &str                  { &self.message }
-	fn cause(&self)       -> Option<&error::Error> { None }
+impl<'a> std::error::Error for ParseError<'a> {
+	fn description(&self) -> &str { &self.message }
+	fn cause(&self)       -> Option<&std::error::Error> { None }
 }
