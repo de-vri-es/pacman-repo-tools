@@ -39,7 +39,7 @@ pub mod version;
 mod parse;
 mod util;
 
-extern crate string_tracker;
+extern crate slice_tracker;
 
 #[cfg(test)]
 #[macro_use(btreemap)]
