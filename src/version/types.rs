@@ -75,24 +75,43 @@ impl Ord for VersionBuf {
 }
 
 // Conversion from Version to VersionBuf
-impl<'a> Into<VersionBuf> for Version<'a> {
-	fn into(self) -> VersionBuf {
+impl<'a> From<Version<'a>> for VersionBuf {
+	fn from(version: Version<'a>) -> VersionBuf {
 		VersionBuf::new(
-			self.epoch,
-			self.pkgver.to_string(),
-			self.pkgrel.as_ref().map(|x| x.to_string())
+			version.epoch,
+			version.pkgver.to_string(),
+			version.pkgrel.as_ref().map(|x| x.to_string())
 		)
 	}
 }
 
 // Conversion from &VersionBuf to Version.
-impl<'a> Into<Version<'a>> for &'a VersionBuf {
-	fn into(self) -> Version<'a> {
+impl<'a> From<&'a VersionBuf> for Version<'a> {
+	fn from(version: &'a VersionBuf) -> Version<'a> {
 		Version::new(
-			self.epoch,
-			self.pkgver.as_ref(),
-			self.pkgrel.as_ref().map(|x| x.as_ref())
+			version.epoch,
+			version.pkgver.as_ref(),
+			version.pkgrel.as_ref().map(|x| x.as_ref())
 		)
+	}
+}
+
+// Display for Version.
+impl<'a> std::fmt::Display for Version<'a> {
+	fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+		match (self.epoch, self.pkgrel) {
+			(0,     None        ) => f.write_str(self.pkgver),
+			(0,     Some(pkgrel)) => f.write_fmt(format_args!("{}-{}", self.pkgver, pkgrel)),
+			(epoch, None        ) => f.write_fmt(format_args!("{}:{}", epoch, self.pkgver)),
+			(epoch, Some(pkgrel)) => f.write_fmt(format_args!("{}:{}-{}", epoch, self.pkgver, pkgrel)),
+		}
+	}
+}
+
+// Display for VersionBuf.
+impl std::fmt::Display for VersionBuf {
+	fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+		Version::from(self).fmt(f)
 	}
 }
 
