@@ -21,6 +21,6 @@ fn main() {
 	}
 
 	for (name, package) in parse_srcinfo_dir(&pool, Path::new(&args[1])).unwrap().into_iter() {
-		println!("{}: {:?}", name, package.version);
+		println!("{}: {:?}", name, package.version());
 	}
 }

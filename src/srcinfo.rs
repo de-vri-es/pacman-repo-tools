@@ -35,7 +35,6 @@ use error::ParseError;
 use package::{Package, PartialPackage};
 use parse::{parse_depends, parse_provides};
 use util::{ConsumableStr, DefaultOption};
-use version::{Version};
 
 use slice_tracker::{SliceTracker, SourceLocation, FileSliceTracker};
 
@@ -96,7 +95,7 @@ fn set_once_err<'a, T>(option: &mut Option<T>, value: T, key: &'a str) -> Result
 	}
 }
 
-fn insert_err<'a, V: Eq>(map: &mut Map<String, V>, map_name: &str, entry: (&'a str, impl Into<V>)) -> Result<'a, ()> {
+fn insert_err<'a, V: Eq>(map: &mut Map<&'a str, V>, map_name: &str, entry: (&'a str, impl Into<V>)) -> Result<'a, ()> {
 	let (key, value) = entry;
 	match map.entry(key.into()) {
 		Entry::Vacant(x)   => { x.insert(value.into()); Ok(()) },
@@ -110,13 +109,13 @@ fn insert_err<'a, V: Eq>(map: &mut Map<String, V>, map_name: &str, entry: (&'a s
 	}
 }
 
-pub struct PackageIterator<DataIterator: Iterator> {
+pub struct PackageIterator<'a, DataIterator: Iterator<Item = Result<'a, (&'a str, &'a str)>>> {
 	data_iterator: std::iter::Peekable<DataIterator>,
-	base: PartialPackage,
+	base: PartialPackage<'a>,
 	base_done: bool,
 }
 
-fn parse_data_line<'a, I>(data_iterator: &mut std::iter::Peekable<I>, package: &mut PartialPackage) -> Result<'a, bool>
+fn parse_data_line<'a, I>(data_iterator: &mut std::iter::Peekable<I>, package: &mut PartialPackage<'a>) -> Result<'a, bool>
 	where I: 'a + Iterator<Item = Result<'a, (&'a str, &'a str)>>
 {
 	let (key, value) = match data_iterator.peek() {
@@ -126,7 +125,9 @@ fn parse_data_line<'a, I>(data_iterator: &mut std::iter::Peekable<I>, package: &
 
 	match key {
 		"pkgname"     => return Ok(true),
-		"pkgver"      => set_once_err(&mut package.version, Version::from_str(value).into(), key)?,
+		"epoch"       => set_once_err(&mut package.epoch,  value.parse().map_err(|x| ParseError::with_token(value, format!("invalid {}: {}", key, x)))?, key)?,
+		"pkgver"      => set_once_err(&mut package.pkgver, value, key)?,
+		"pkgrel"      => set_once_err(&mut package.pkgrel, value, key)?,
 		"url"         => set_once_err(&mut package.url, value.into(), key)?,
 		"description" => set_once_err(&mut package.description, value.into(), key)?,
 
@@ -149,28 +150,30 @@ fn parse_data_line<'a, I>(data_iterator: &mut std::iter::Peekable<I>, package: &
 	Ok(false)
 }
 
-fn parse_data_lines<'a, I>(data_iterator: &mut std::iter::Peekable<I>, mut package: PartialPackage) -> Result<'a, PartialPackage>
+fn parse_data_lines<'a, I>(data_iterator: &mut std::iter::Peekable<I>, mut package: PartialPackage<'a>) -> Result<'a, PartialPackage<'a>>
 	where I: 'a + Iterator<Item = Result<'a, (&'a str, &'a str)>>
 {
 	while !parse_data_line(data_iterator, &mut package)? {}
 	Ok(package)
 }
 
-fn parse_base<'a, I>(data_iterator: &mut std::iter::Peekable<I>) -> Result<'a, PartialPackage>
+fn parse_base<'a, I>(data_iterator: &mut std::iter::Peekable<I>) -> Result<'a, PartialPackage<'a>>
 	where I: 'a + Iterator<Item = Result<'a, (&'a str, &'a str)>>
 {
 	let base = parse_data_lines(data_iterator, PartialPackage::default())?;
-	if base.version.is_none() {
-		Err(ParseError::no_token("missing pkgver in base"))
+	if base.pkgver.is_none() {
+		Err(ParseError::no_token("missing pkgver in pkgbase"))
+	} else if base.pkgrel.is_none() {
+		Err(ParseError::no_token("missing pkgrel in pkgbase"))
 	} else {
 		Ok(base)
 	}
 }
 
-fn parse_package<'a, I>(data_iterator: &mut std::iter::Peekable<I>, base: &PartialPackage) -> Option<Result<'a, PartialPackage>>
+fn parse_package<'a, I>(data_iterator: &mut std::iter::Peekable<I>, base: &PartialPackage<'a>) -> Option<Result<'a, PartialPackage<'a>>>
 	where I: 'a + Iterator<Item = Result<'a, (&'a str, &'a str)>>
 {
-	let (key, name) = match data_iterator.next() {
+	let (key, pkgname) = match data_iterator.next() {
 		None         => return None,
 		Some(Err(x)) => return Some(Err(x)),
 		Some(Ok(x))  => x,
@@ -179,8 +182,10 @@ fn parse_package<'a, I>(data_iterator: &mut std::iter::Peekable<I>, base: &Parti
 	if key != "pkgname" { panic!("logic error: next item in iterator had to be pkgname"); }
 
 	let mut package = PartialPackage::default();
-	package.name    = Some(String::from(name));
-	package.version = base.version.clone();
+	package.pkgname = Some(pkgname);
+	package.epoch   = base.epoch;
+	package.pkgver  = base.pkgver;
+	package.pkgrel  = base.pkgrel;
 
 	let mut package = match parse_data_lines(data_iterator, package) {
 		Err(x) => return Some(Err(x)),
@@ -191,7 +196,7 @@ fn parse_package<'a, I>(data_iterator: &mut std::iter::Peekable<I>, base: &Parti
 	Some(Ok(package))
 }
 
-impl<'a, DataIterator> PackageIterator<DataIterator>
+impl<'a, DataIterator> PackageIterator<'a, DataIterator>
 	where DataIterator: 'a + Iterator<Item = Result<'a, (&'a str, &'a str)>>
 {
 	pub fn new(data_iterator: DataIterator) -> Self {
@@ -204,12 +209,12 @@ impl<'a, DataIterator> PackageIterator<DataIterator>
 
 }
 
-impl<'a, DataIterator> Iterator for PackageIterator<DataIterator>
+impl<'a, DataIterator> Iterator for PackageIterator<'a, DataIterator>
 	where DataIterator: 'a + Iterator<Item = Result<'a, (&'a str, &'a str)>>
 {
-	type Item = Result<'a, Package>;
+	type Item = Result<'a, Package<'a>>;
 
-	fn next(&mut self) -> Option<Result<'a, Package>> {
+	fn next(&mut self) -> Option<Result<'a, Package<'a>>> {
 		// Make sure the pkgbase is parsed.
 		if !std::mem::replace(&mut self.base_done, true) {
 			self.base = match parse_base(&mut self.data_iterator) {
@@ -224,7 +229,7 @@ impl<'a, DataIterator> Iterator for PackageIterator<DataIterator>
 	}
 }
 
-pub fn parse_srcinfo_blob<'a>(blob: &'a str) -> PackageIterator<impl Iterator<Item = Result<'a, (&'a str, &'a str)>>> {
+pub fn parse_srcinfo_blob<'a>(blob: &'a str) -> PackageIterator<'a, impl Iterator<Item = Result<'a, (&'a str, &'a str)>>> {
 	PackageIterator::new(iterate_info(blob))
 }
 
@@ -239,7 +244,7 @@ pub fn walk_srcinfo_files<P: ?Sized + AsRef<Path>>(directory: &P) -> impl Iterat
 	)
 }
 
-pub fn parse_srcinfo_dir<'a, 'b, P>(tracker: &'b SourceTracker, directory: &P) -> DbResult<'b, Map<String, Package>> where P: ?Sized + AsRef<Path> {
+pub fn parse_srcinfo_dir<'a, P>(tracker: &'a SourceTracker, directory: &P) -> DbResult<'a, Map<&'a str, Package<'a>>> where P: ?Sized + AsRef<Path> {
 	let mut result = Map::default();
 	for entry in walk_srcinfo_files(directory) {
 		let entry    = entry.map_err(ReadDbError::WalkError)?;
@@ -248,8 +253,8 @@ pub fn parse_srcinfo_dir<'a, 'b, P>(tracker: &'b SourceTracker, directory: &P) -
 		for package in parse_srcinfo_blob(&data) {
 			match package {
 				Err(x) => return Err(ReadDbError::ParseError(path.into(), x)),
-				Ok(package) => match result.entry(package.name.clone()) {
-					Entry::Occupied(_) => return Err(ReadDbError::ParseError(path.into(), ParseError::no_token(format!("duplicate package name: {}", &package.name)))),
+				Ok(package) => match result.entry(package.pkgname) {
+					Entry::Occupied(_) => return Err(ReadDbError::ParseError(path.into(), ParseError::no_token(format!("duplicate package name: {}", package.pkgname)))),
 					Entry::Vacant(x)   => x.insert(package),
 				}
 			};

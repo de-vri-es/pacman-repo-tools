@@ -1,11 +1,10 @@
 use package::Constraint;
 use package::VersionConstraint;
 use version::Version;
-use version::VersionBuf;
 
 use util::ConsumableStr;
 
-pub fn parse_provides(blob: &str) -> (&str, Option<VersionBuf>) {
+pub fn parse_provides(blob: &str) -> (&str, Option<Version>) {
 	if let Some((key, _, version)) = blob.partition('=') {
 		(key, Some(Version::from_str(version).into()))
 	} else {
@@ -52,7 +51,7 @@ mod test {
 		assert_eq!(parse_provides("=1"),      ("",    Some(Version::new(0, "1",   None).into())));
 	}
 
-	fn some_constraint(version: VersionBuf, constraint: Constraint) -> Option<VersionConstraint> {
+	fn some_constraint<'a>(version: Version<'a>, constraint: Constraint) -> Option<VersionConstraint<'a>> {
 		Some(VersionConstraint{version, constraint})
 	}
 
