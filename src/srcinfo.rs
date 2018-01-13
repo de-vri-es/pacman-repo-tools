@@ -124,26 +124,26 @@ fn parse_data_line<'a, I>(data_iterator: &mut std::iter::Peekable<I>, package: &
 	};
 
 	match key {
-		"pkgname"     => return Ok(true),
-		"epoch"       => set_once_err(&mut package.epoch,  value.parse().map_err(|x| ParseError::with_token(value, format!("invalid {}: {}", key, x)))?, key)?,
-		"pkgver"      => set_once_err(&mut package.pkgver, value, key)?,
-		"pkgrel"      => set_once_err(&mut package.pkgrel, value, key)?,
-		"url"         => set_once_err(&mut package.url, value.into(), key)?,
-		"description" => set_once_err(&mut package.description, value.into(), key)?,
+		"pkgname"      => return Ok(true),
+		"epoch"        => set_once_err(&mut package.epoch,  value.parse().map_err(|x| ParseError::with_token(value, format!("invalid {}: {}", key, x)))?, key)?,
+		"pkgver"       => set_once_err(&mut package.pkgver, value, key)?,
+		"pkgrel"       => set_once_err(&mut package.pkgrel, value, key)?,
+		"url"          => set_once_err(&mut package.url, value.into(), key)?,
+		"pkgdesc"      => set_once_err(&mut package.description, value.into(), key)?,
 
-		"licenses"      => package.licenses.get_or_default().push(value.into()),
-		"groups"        => package.groups.get_or_default().push(value.into()),
-		"backup"        => package.backup.get_or_default().push(value.into()),
+		"license"      => package.licenses.get_or_default().push(value.into()),
+		"groups"       => package.groups.get_or_default().push(value.into()),
+		"backup"       => package.backup.get_or_default().push(value.into()),
 
-		"provides"      => insert_err(package.provides.get_or_default(),  key, parse_provides(value))?,
-		"conflicts"     => insert_err(package.conflicts.get_or_default(), key, parse_depends(value))?,
-		"replaces"      => insert_err(package.replaces.get_or_default(),  key, parse_depends(value))?,
+		"provides"     => insert_err(package.provides.get_or_default(),  key, parse_provides(value))?,
+		"conflicts"    => insert_err(package.conflicts.get_or_default(), key, parse_depends(value))?,
+		"replaces"     => insert_err(package.replaces.get_or_default(),  key, parse_depends(value))?,
 
-		"depends"       => insert_err(package.depends.get_or_default(),       key, parse_depends(value))?,
-		"opt_depends"   => insert_err(package.opt_depends.get_or_default(),   key, parse_depends(value))?,
-		"make_depends"  => insert_err(package.make_depends.get_or_default(),  key, parse_depends(value))?,
-		"check_depends" => insert_err(package.check_depends.get_or_default(), key, parse_depends(value))?,
-		_               => {}, // ignore unknown keys
+		"depends"      => insert_err(package.depends.get_or_default(),       key, parse_depends(value))?,
+		"optdepends"   => insert_err(package.opt_depends.get_or_default(),   key, parse_depends(value))?,
+		"makedepends"  => insert_err(package.make_depends.get_or_default(),  key, parse_depends(value))?,
+		"checkdepends" => insert_err(package.check_depends.get_or_default(), key, parse_depends(value))?,
+		_              => println!("unknown key: {}", key), // ignore unknown keys
 	}
 
 	data_iterator.next();
