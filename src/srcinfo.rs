@@ -137,7 +137,7 @@ fn parse_data_line<'a, I>(data_iterator: &mut std::iter::Peekable<I>, package: &
 		"optdepends"   => insert_err(package.opt_depends.get_or_default(),   key, parse_depends(value))?,
 		"makedepends"  => insert_err(package.make_depends.get_or_default(),  key, parse_depends(value))?,
 		"checkdepends" => insert_err(package.check_depends.get_or_default(), key, parse_depends(value))?,
-		_              => println!("unknown key: {}", key), // ignore unknown keys
+		_              => (), // ignore unknown keys
 	}
 
 	data_iterator.next();

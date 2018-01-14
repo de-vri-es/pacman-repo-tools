@@ -104,7 +104,6 @@ pub struct PartialPackage<'a> {
 impl<'a> PartialPackage<'a> {
 	/// Try to create a package from the partial package.
 	pub fn into_package(self) -> Result<Package<'a>, String> {
-		println!("{:?}", self);
 		Ok(Package {
 			pkgname:    self.pkgname.ok_or_else(|| String::from("missing pkgname"))?,
 			epoch:      self.epoch.unwrap_or(0),
