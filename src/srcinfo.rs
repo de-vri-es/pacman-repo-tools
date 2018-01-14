@@ -109,12 +109,6 @@ fn insert_err<'a, V: Eq>(map: &mut Map<&'a str, V>, map_name: &str, entry: (&'a 
 	}
 }
 
-pub struct PackageIterator<'a, DataIterator: Iterator<Item = Result<'a, (&'a str, &'a str)>>> {
-	data_iterator: std::iter::Peekable<DataIterator>,
-	base: PartialPackage<'a>,
-	base_done: bool,
-}
-
 fn parse_data_line<'a, I>(data_iterator: &mut std::iter::Peekable<I>, package: &mut PartialPackage<'a>) -> Result<'a, bool>
 	where I: 'a + Iterator<Item = Result<'a, (&'a str, &'a str)>>
 {
@@ -196,6 +190,12 @@ fn parse_package<'a, I>(data_iterator: &mut std::iter::Peekable<I>, base: &Parti
 	Some(Ok(package))
 }
 
+struct PackageIterator<'a, DataIterator: Iterator<Item = Result<'a, (&'a str, &'a str)>>> {
+	data_iterator: std::iter::Peekable<DataIterator>,
+	base: PartialPackage<'a>,
+	base_done: bool,
+}
+
 impl<'a, DataIterator> PackageIterator<'a, DataIterator>
 	where DataIterator: 'a + Iterator<Item = Result<'a, (&'a str, &'a str)>>
 {
@@ -229,7 +229,7 @@ impl<'a, DataIterator> Iterator for PackageIterator<'a, DataIterator>
 	}
 }
 
-pub fn parse_srcinfo_blob<'a>(blob: &'a str) -> PackageIterator<'a, impl Iterator<Item = Result<'a, (&'a str, &'a str)>>> {
+pub fn parse_srcinfo_blob<'a>(blob: &'a str) -> impl Iterator<Item = Result<'a, Package<'a>>> {
 	PackageIterator::new(iterate_info(blob))
 }
 
@@ -244,7 +244,7 @@ pub fn walk_srcinfo_files<P: ?Sized + AsRef<Path>>(directory: &P) -> impl Iterat
 	)
 }
 
-pub fn parse_srcinfo_dir<'a, P>(tracker: &'a SourceTracker, directory: &P) -> DbResult<'a, Map<&'a str, Package<'a>>> where P: ?Sized + AsRef<Path> {
+pub fn parse_srcinfo_dir<'a, P>(tracker: &'a SourceTracker, directory: &P) -> DbResult<'a, Map<&'a str, (PathBuf, Package<'a>)>> where P: ?Sized + AsRef<Path> {
 	let mut result = Map::default();
 	for entry in walk_srcinfo_files(directory) {
 		let entry    = entry.map_err(ReadDbError::WalkError)?;
@@ -255,7 +255,7 @@ pub fn parse_srcinfo_dir<'a, P>(tracker: &'a SourceTracker, directory: &P) -> Db
 				Err(x) => return Err(ReadDbError::ParseError(path.into(), x)),
 				Ok(package) => match result.entry(package.pkgname) {
 					Entry::Occupied(_) => return Err(ReadDbError::ParseError(path.into(), ParseError::no_token(format!("duplicate package name: {}", package.pkgname)))),
-					Entry::Vacant(x)   => x.insert(package),
+					Entry::Vacant(x)   => x.insert((path.into(), package)),
 				}
 			};
 		}

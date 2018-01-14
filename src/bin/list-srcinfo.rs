@@ -11,10 +11,9 @@ type SourceTracker<'a> = SliceTracker<'a, str, SourceLocation<'a, str>>;
 fn main() {
 	let args: Vec<_> = std::env::args().collect();
 
-	println!("Searching in {:?}", &args);
 	let pool = SourceTracker::default();
 
-	for (name, package) in parse_srcinfo_dir(&pool, Path::new(&args[1])).unwrap().into_iter() {
-		println!("{}-{}", name, package.version());
+	for (name, (path, package)) in parse_srcinfo_dir(&pool, Path::new(&args[1])).unwrap().into_iter() {
+		println!("{}: {}-{}", path.display(), name, package.version());
 	}
 }
