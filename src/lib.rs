@@ -21,12 +21,7 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#![feature(collections_range)]
-#![feature(conservative_impl_trait)]
-#![feature(generators)]
 #![feature(pattern)]
-#![feature(pointer_methods)]
-#![feature(universal_impl_trait)]
 
 #[macro_use]
 mod macros;

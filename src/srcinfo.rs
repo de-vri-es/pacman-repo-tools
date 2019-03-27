@@ -63,11 +63,6 @@ impl<'a> std::fmt::Display for ReadDbError<'a> {
 	fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result { std::fmt::Display::fmt(self.inner(), f) }
 }
 
-impl<'a> std::error::Error for ReadDbError<'a> {
-	fn description(&self) -> &str                       { self.inner().description() }
-	fn cause(&self)       -> Option<&std::error::Error> { self.inner().cause() }
-}
-
 /// Iterate over key,value pairs in an INFO blob.
 ///
 /// INFO blobs consist of 'key = value' lines.
