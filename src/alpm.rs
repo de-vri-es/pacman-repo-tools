@@ -23,8 +23,8 @@
 
 use std::collections::BTreeMap;
 
-use error::ParseError;
-use util::ConsumableStr;
+use crate::error::ParseError;
+use crate::util::ConsumableStr;
 
 fn parse_key(line: &str) -> Option<&str> {
 	let mut line = line;

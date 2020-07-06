@@ -20,13 +20,10 @@ impl<'a> ParseError<'a> {
 	}
 }
 
-impl<'a> std::fmt::Display for ParseError<'a> {
+impl std::fmt::Display for ParseError<'_> {
 	fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
 		f.write_str(&self.message)
 	}
 }
 
-impl<'a> std::error::Error for ParseError<'a> {
-	fn description(&self) -> &str { &self.message }
-	fn cause(&self)       -> Option<&std::error::Error> { None }
-}
+impl std::error::Error for ParseError<'_> {}

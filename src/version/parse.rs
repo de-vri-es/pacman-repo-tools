@@ -1,4 +1,4 @@
-use util::ConsumableStr;
+use crate::util::ConsumableStr;
 
 pub fn consume_epoch(v: &mut &str) -> Option<i32> {
 	let mut a: &str = v;

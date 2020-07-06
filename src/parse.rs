@@ -1,8 +1,8 @@
-use package::Constraint;
-use package::VersionConstraint;
-use version::Version;
+use crate::package::Constraint;
+use crate::package::VersionConstraint;
+use crate::version::Version;
 
-use util::ConsumableStr;
+use crate::util::ConsumableStr;
 
 pub fn parse_provides(blob: &str) -> (&str, Option<Version>) {
 	if let Some((key, _, version)) = blob.partition('=') {

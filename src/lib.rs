@@ -34,9 +34,3 @@ pub mod version;
 
 mod parse;
 mod util;
-
-extern crate slice_tracker;
-
-#[cfg(test)]
-#[macro_use(btreemap)]
-extern crate maplit;

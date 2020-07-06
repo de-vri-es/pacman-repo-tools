@@ -23,7 +23,7 @@
 
 use std::collections::BTreeMap as Map;
 
-use version::Version;
+use crate::version::Version;
 
 #[derive(Copy,Clone,Debug,Eq,PartialEq)]
 pub enum Constraint {

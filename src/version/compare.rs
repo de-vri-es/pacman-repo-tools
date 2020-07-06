@@ -1,7 +1,7 @@
 use std::cmp::Ordering;
 
 use super::Version;
-use util::ConsumableStr;
+use crate::util::ConsumableStr;
 
 pub fn compare_version_string(a: &str, b: &str) -> Ordering {
 	let mut a = a;

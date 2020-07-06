@@ -28,13 +28,12 @@ use std::ffi::OsStr;
 use std::io::Error as IoError;
 use std::path::{Path,PathBuf};
 
-extern crate walkdir;
-use self::walkdir::{DirEntry, WalkDir};
+use walkdir::{DirEntry, WalkDir};
 
-use error::ParseError;
-use package::{Package, PartialPackage};
-use parse::{parse_depends, parse_provides};
-use util::{ConsumableStr, DefaultOption};
+use crate::error::ParseError;
+use crate::package::{Package, PartialPackage};
+use crate::parse::{parse_depends, parse_provides};
+use crate::util::{ConsumableStr, DefaultOption};
 
 use slice_tracker::{SliceTracker, SourceLocation, FileSliceTracker};
 
@@ -49,18 +48,14 @@ pub enum ReadDbError<'a> {
 	ParseError(PathBuf, ParseError<'a>),
 }
 
-impl<'a> ReadDbError<'a> {
-	pub fn inner(&self) -> &std::error::Error {
+impl<'a> std::fmt::Display for ReadDbError<'a> {
+	fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
 		match self {
-			&ReadDbError::WalkError(ref err) => err,
-			&ReadDbError::IoError(_, ref err) => err,
-			&ReadDbError::ParseError(_, ref err) => err,
+			ReadDbError::WalkError(e) => write!(f, "{}", e),
+			ReadDbError::IoError(_, e) => write!(f, "{}", e),
+			ReadDbError::ParseError(_, e) => write!(f, "{}", e),
 		}
 	}
-}
-
-impl<'a> std::fmt::Display for ReadDbError<'a> {
-	fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result { std::fmt::Display::fmt(self.inner(), f) }
 }
 
 /// Iterate over key,value pairs in an INFO blob.
