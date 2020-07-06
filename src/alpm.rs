@@ -70,6 +70,7 @@ pub fn parse_dict(blob: &str) -> Result<BTreeMap<&str, Vec<&str>>, ParseError> {
 #[cfg(test)]
 mod tests {
 	use super::*;
+	use maplit::btreemap;
 
 	#[test]
 	fn simple() {
