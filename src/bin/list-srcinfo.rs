@@ -5,8 +5,8 @@ extern crate slice_tracker;
 
 use prt::srcinfo::parse_srcinfo_dir;
 
-use slice_tracker::{SliceTracker, SourceLocation};
-type SourceTracker<'a> = SliceTracker<'a, str, SourceLocation<'a, str>>;
+use slice_tracker::{SliceTracker, Source};
+type SourceTracker<'a> = SliceTracker<String, Source<str>>;
 
 fn main() {
 	let args: Vec<_> = std::env::args().collect();

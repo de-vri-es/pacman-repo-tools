@@ -35,9 +35,9 @@ use crate::package::{Package, PartialPackage};
 use crate::parse::{parse_depends, parse_provides};
 use crate::util::{ConsumableStr, DefaultOption};
 
-use slice_tracker::{SliceTracker, SourceLocation, FileSliceTracker};
+use slice_tracker::{SliceTracker, Source, FileTracker};
 
-type SourceTracker<'a> = SliceTracker<'a, str, SourceLocation<'a, str>>;
+type SourceTracker<'a> = SliceTracker<String, Source<str>>;
 type Result<'a, T>   = std::result::Result<T, ParseError<'a>>;
 type DbResult<'a, T> = std::result::Result<T, ReadDbError<'a>>;
 

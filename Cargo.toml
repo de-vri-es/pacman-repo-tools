@@ -10,4 +10,4 @@ edition     = "2018"
 [dependencies]
 maplit = "*"
 walkdir = "*"
-slice-tracker = {git = "https://github.com/de-vri-es/rust-slice-tracker"}
+slice-tracker = {git = "https://github.com/de-vri-es/slice-tracker-rs"}
