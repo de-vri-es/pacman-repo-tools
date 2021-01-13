@@ -29,6 +29,7 @@ fn parse_key(line: &str) -> Option<&str> {
 	line.strip_prefix('%')?.strip_suffix('%')
 }
 
+/// Parse an ALPM file to a map of strings to vector of strings.
 pub fn parse_dict(blob: &str) -> Result<BTreeMap<&str, Vec<&str>>, ParseError> {
 	// Iterator over trimmed lines, skipping empty lines.
 	let mut lines = blob.split('\n').map(|x| x.trim()).filter(|x| !x.is_empty());

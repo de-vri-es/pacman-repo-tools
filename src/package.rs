@@ -25,27 +25,7 @@ use std::collections::BTreeMap as Map;
 
 use crate::version::Version;
 
-#[derive(Copy, Clone, Debug, Eq, PartialEq)]
-pub enum Constraint {
-	Equal,
-	Greater,
-	GreaterEqual,
-	Less,
-	LessEqual,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct VersionedTarget<'a> {
-	pub name: &'a str,
-	pub version: Version<'a>,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq)]
-pub struct VersionConstraint<'a> {
-	pub version: Version<'a>,
-	pub constraint: Constraint,
-}
-
+/// Metadata about a pacman package.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Package<'a> {
 	pub pkgname: &'a str,
@@ -70,17 +50,7 @@ pub struct Package<'a> {
 	pub check_depends: Map<&'a str, Option<VersionConstraint<'a>>>,
 }
 
-impl<'a> Package<'a> {
-	pub fn version(&self) -> Version<'a> {
-		Version {
-			epoch: self.epoch,
-			pkgver: self.pkgver,
-			pkgrel: self.pkgrel,
-		}
-	}
-}
-
-/// A partial package with some information possibly missing.
+/// Metadata about a package with some information possibly missing.
 #[derive(Default, Clone, Debug, Eq, PartialEq)]
 pub struct PartialPackage<'a> {
 	pub pkgname: Option<&'a str>,
@@ -103,6 +73,40 @@ pub struct PartialPackage<'a> {
 	pub opt_depends: Option<Map<&'a str, Option<VersionConstraint<'a>>>>,
 	pub make_depends: Option<Map<&'a str, Option<VersionConstraint<'a>>>>,
 	pub check_depends: Option<Map<&'a str, Option<VersionConstraint<'a>>>>,
+}
+
+/// A version constraint operator.
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub enum Constraint {
+	Equal,
+	Greater,
+	GreaterEqual,
+	Less,
+	LessEqual,
+}
+
+/// A versioned package target.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct VersionedTarget<'a> {
+	pub name: &'a str,
+	pub version: Version<'a>,
+}
+
+/// A version constraint as used for package dependencies.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct VersionConstraint<'a> {
+	pub version: Version<'a>,
+	pub constraint: Constraint,
+}
+
+impl<'a> Package<'a> {
+	pub fn version(&self) -> Version<'a> {
+		Version {
+			epoch: self.epoch,
+			pkgver: self.pkgver,
+			pkgrel: self.pkgrel,
+		}
+	}
 }
 
 impl<'a> PartialPackage<'a> {
@@ -132,7 +136,10 @@ impl<'a> PartialPackage<'a> {
 		})
 	}
 
-	/// Add information from a pkgbase (for split packages).
+	/// Add information from a pkgbase.
+	///
+	/// This is useful for combining information the pkgbase of a .SRCINFO file
+	/// with the information about a specific package.
 	pub fn add_base(&mut self, base: &PartialPackage<'a>) {
 		if self.url.is_none() {
 			self.url = base.url

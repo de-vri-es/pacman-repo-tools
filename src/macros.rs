@@ -1,4 +1,3 @@
-
 #[macro_export]
 #[rustfmt::skip]
 macro_rules! impl_ord_requisites {

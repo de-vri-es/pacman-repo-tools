@@ -40,10 +40,16 @@ type SourceTracker<'a> = SliceTracker<String, Source<str>>;
 type ParseResult<'a, T> = std::result::Result<T, ParseError<'a>>;
 type DbResult<'a, T> = std::result::Result<T, ReadDbError<'a>>;
 
+/// An error that can occur while reading a folder structure with .SRCINFO files.
 #[derive(Debug)]
 pub enum ReadDbError<'a> {
+	/// An error occured while crawling the filesystem.
 	WalkError(walkdir::Error),
+
+	/// An error occured while reading a .SRCINFO file.
 	IoError(PathBuf, IoError),
+
+	/// An error occured while parsing a .SRCINFO file.
 	ParseError(PathBuf, ParseError<'a>),
 }
 
@@ -77,7 +83,8 @@ pub fn iterate_info<'a>(blob: &'a str) -> impl Iterator<Item = ParseResult<'a, (
 	})
 }
 
-fn set_once_err<'a, T>(option: &mut Option<T>, value: T, key: &'a str) -> ParseResult<'a, ()> {
+/// Set the value of an Option, or give an error if it is already set.
+fn set_once<'a, T>(option: &mut Option<T>, value: T, key: &'a str) -> ParseResult<'a, ()> {
 	if option.is_some() {
 		Err(ParseError::with_token(key, format!("duplicate key: {}", key)))
 	} else {
@@ -86,7 +93,11 @@ fn set_once_err<'a, T>(option: &mut Option<T>, value: T, key: &'a str) -> ParseR
 	}
 }
 
-fn insert_err<'a, V: Eq>(map: &mut Map<&'a str, V>, map_name: &str, entry: (&'a str, impl Into<V>)) -> ParseResult<'a, ()> {
+/// Insert a value into a map, but give an error if a conflicting entry already exists.
+///
+/// If the key already exists but the value is the same as the one being inserted,
+/// the insertion is ignored and no error is returned.
+fn insert_map<'a, V: Eq>(map: &mut Map<&'a str, V>, map_name: &str, entry: (&'a str, impl Into<V>)) -> ParseResult<'a, ()> {
 	let (key, value) = entry;
 	match map.entry(key.into()) {
 		Entry::Vacant(x) => {
@@ -106,6 +117,10 @@ fn insert_err<'a, V: Eq>(map: &mut Map<&'a str, V>, map_name: &str, entry: (&'a 
 	}
 }
 
+/// Parse one line of data from a .SRCINFO file.
+///
+/// This function returns true once the current package is done.
+/// Data belonging to the next package is not consumed from the iterator.
 fn parse_data_line<'a, I>(data_iterator: &mut std::iter::Peekable<I>, package: &mut PartialPackage<'a>) -> ParseResult<'a, bool>
 where
 	I: 'a + Iterator<Item = ParseResult<'a, (&'a str, &'a str)>>,
@@ -121,25 +136,25 @@ where
 			let value = value
 				.parse()
 				.map_err(|x| ParseError::with_token(value, format!("invalid {}: {}", key, x)))?;
-			set_once_err(&mut package.epoch, value, key)?;
+			set_once(&mut package.epoch, value, key)?;
 		},
-		"pkgver" => set_once_err(&mut package.pkgver, value, key)?,
-		"pkgrel" => set_once_err(&mut package.pkgrel, value, key)?,
-		"url" => set_once_err(&mut package.url, value.into(), key)?,
-		"pkgdesc" => set_once_err(&mut package.description, value.into(), key)?,
+		"pkgver" => set_once(&mut package.pkgver, value, key)?,
+		"pkgrel" => set_once(&mut package.pkgrel, value, key)?,
+		"url" => set_once(&mut package.url, value.into(), key)?,
+		"pkgdesc" => set_once(&mut package.description, value.into(), key)?,
 
 		"license" => package.licenses.get_or_insert(Default::default()).push(value.into()),
 		"groups" => package.groups.get_or_insert(Default::default()).push(value.into()),
 		"backup" => package.backup.get_or_insert(Default::default()).push(value.into()),
 
-		"provides" => insert_err(package.provides.get_or_insert(Default::default()), key, parse_provides(value))?,
-		"conflicts" => insert_err(package.conflicts.get_or_insert(Default::default()), key, parse_depends(value))?,
-		"replaces" => insert_err(package.replaces.get_or_insert(Default::default()), key, parse_depends(value))?,
+		"provides" => insert_map(package.provides.get_or_insert(Default::default()), key, parse_provides(value))?,
+		"conflicts" => insert_map(package.conflicts.get_or_insert(Default::default()), key, parse_depends(value))?,
+		"replaces" => insert_map(package.replaces.get_or_insert(Default::default()), key, parse_depends(value))?,
 
-		"depends" => insert_err(package.depends.get_or_insert(Default::default()), key, parse_depends(value))?,
-		"optdepends" => insert_err(package.opt_depends.get_or_insert(Default::default()), key, parse_depends(value))?,
-		"makedepends" => insert_err(package.make_depends.get_or_insert(Default::default()), key, parse_depends(value))?,
-		"checkdepends" => insert_err(package.check_depends.get_or_insert(Default::default()), key, parse_depends(value))?,
+		"depends" => insert_map(package.depends.get_or_insert(Default::default()), key, parse_depends(value))?,
+		"optdepends" => insert_map(package.opt_depends.get_or_insert(Default::default()), key, parse_depends(value))?,
+		"makedepends" => insert_map(package.make_depends.get_or_insert(Default::default()), key, parse_depends(value))?,
+		"checkdepends" => insert_map(package.check_depends.get_or_insert(Default::default()), key, parse_depends(value))?,
 		_ => (), // ignore unknown keys
 	}
 
@@ -147,6 +162,7 @@ where
 	Ok(false)
 }
 
+/// Parse all data belonging to one package.
 fn parse_data_lines<'a, I>(data_iterator: &mut std::iter::Peekable<I>, mut package: PartialPackage<'a>) -> ParseResult<'a, PartialPackage<'a>>
 where
 	I: 'a + Iterator<Item = ParseResult<'a, (&'a str, &'a str)>>,
@@ -155,6 +171,7 @@ where
 	Ok(package)
 }
 
+/// Parse all pkgbase data not belonging to any specific package.
 fn parse_base<'a, I>(data_iterator: &mut std::iter::Peekable<I>) -> ParseResult<'a, PartialPackage<'a>>
 where
 	I: 'a + Iterator<Item = ParseResult<'a, (&'a str, &'a str)>>,
@@ -169,6 +186,7 @@ where
 	}
 }
 
+/// Parse the next package from an iterator over the lines of a .SRCINFO file.
 fn parse_package<'a, I>(data_iterator: &mut std::iter::Peekable<I>, base: &PartialPackage<'a>) -> Option<ParseResult<'a, PartialPackage<'a>>>
 where
 	I: 'a + Iterator<Item = ParseResult<'a, (&'a str, &'a str)>>,
@@ -198,6 +216,7 @@ where
 	Some(Ok(package))
 }
 
+/// Iterator over all packages in a .SRCINFO file.
 struct PackageIterator<'a, DataIterator: Iterator<Item = ParseResult<'a, (&'a str, &'a str)>>> {
 	data_iterator: std::iter::Peekable<DataIterator>,
 	base: PartialPackage<'a>,
@@ -238,6 +257,7 @@ where
 	}
 }
 
+/// Parse all packages from a .SRCINFO file.
 pub fn parse_srcinfo_blob<'a>(blob: &'a str) -> impl Iterator<Item = ParseResult<'a, Package<'a>>> {
 	PackageIterator::new(iterate_info(blob))
 }
@@ -253,6 +273,9 @@ pub fn walk_srcinfo_files<P: ?Sized + AsRef<Path>>(directory: &P) -> impl Iterat
 	})
 }
 
+/// Parse all .SRCINFO files under the given directory.
+///
+/// This will recursively look in subdirectories.
 pub fn parse_srcinfo_dir<'a, P>(tracker: &'a SourceTracker, directory: &P) -> DbResult<'a, Map<&'a str, (PathBuf, Package<'a>)>>
 where
 	P: ?Sized + AsRef<Path>,
