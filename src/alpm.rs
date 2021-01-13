@@ -31,12 +31,15 @@ fn parse_key(line: &str) -> Option<&str> {
 
 pub fn parse_dict(blob: &str) -> Result<BTreeMap<&str, Vec<&str>>, ParseError> {
 	// Iterator over trimmed lines, skipping empty lines.
-	let mut lines  = blob.split('\n').map(|x| x.trim()).filter(|x| !x.is_empty());
+	let mut lines = blob.split('\n').map(|x| x.trim()).filter(|x| !x.is_empty());
 
 	// Parse a key from the first line.
 	let mut key = match lines.next() {
-		None       => return Ok(BTreeMap::default()),
-		Some(line) => parse_key(line).ok_or(ParseError::with_token(line, "expected first non-empty line to be a key in the format %NAME%"))?,
+		None => return Ok(BTreeMap::default()),
+		Some(line) => parse_key(line).ok_or(ParseError::with_token(
+			line,
+			"expected first non-empty line to be a key in the format %NAME%",
+		))?,
 	};
 
 	// Loop until all lines are processed.
@@ -60,55 +63,54 @@ pub fn parse_dict(blob: &str) -> Result<BTreeMap<&str, Vec<&str>>, ParseError> {
 	Ok(result)
 }
 
-
 #[cfg(test)]
 mod test {
 	use super::*;
-	use maplit::btreemap;
 	use assert2::assert;
+	use maplit::btreemap;
 
 	#[test]
 	fn simple() {
 		let blob = ["%FOO%", "aap", "noot", "mies"].join("\n");
-		assert!(parse_dict(blob.as_ref()) == Ok(btreemap!{"FOO" => vec!["aap", "noot", "mies"]}));
+		assert!(parse_dict(blob.as_ref()) == Ok(btreemap!("FOO" => vec!["aap", "noot", "mies"])));
 	}
 
 	#[test]
 	fn lines_are_trimmed() {
 		let blob = ["  %FOO%  ", "    aap  ", "   noot", "mies  "].join("\n");
-		assert!(parse_dict(blob.as_ref()) == Ok(btreemap!{"FOO" => vec!["aap", "noot", "mies"]}));
+		assert!(parse_dict(blob.as_ref()) == Ok(btreemap!("FOO" => vec!["aap", "noot", "mies"])));
 	}
 
 	#[test]
 	fn empty_lines_are_ignored() {
 		let blob = ["", "", "", "%FOO%", "", "", "", "aap", "", "noot", "mies", "", ""].join("\n");
-		assert!(parse_dict(blob.as_ref()) == Ok(btreemap!{"FOO" => vec!["aap", "noot", "mies"]}));
+		assert!(parse_dict(blob.as_ref()) == Ok(btreemap!("FOO" => vec!["aap", "noot", "mies"])));
 	}
 
 	#[test]
+	#[rustfmt::skip]
 	fn multiple_keys() {
 		let blob = [
 			"%FOO%", "aap", "noot", "mies",
 			"%BAR%", "wim", "zus", "jet",
 		].join("\n");
-		assert!(parse_dict(blob.as_ref()) == Ok(btreemap!{
+		assert!(parse_dict(blob.as_ref()) == Ok(btreemap!(
 			"FOO" => vec!["aap", "noot", "mies"],
 			"BAR" => vec!["wim", "zus", "jet"]
-		}));
+		)));
 	}
 
 	#[test]
+	#[rustfmt::skip]
 	fn keys_can_be_reopened() {
 		let blob = [
 			"%FOO%", "aap", "noot",
-			"%BAR%", "wim",
-			"%FOO%", "mies",
-			"%BAR%", "zus",
-			"%BAR%", "jet",
+			"%BAR%", "wim", "%FOO%", "mies",
+			"%BAR%", "zus", "%BAR%", "jet",
 		].join("\n");
-		assert!(parse_dict(blob.as_ref()) == Ok(btreemap!{
+		assert!(parse_dict(blob.as_ref()) == Ok(btreemap!(
 			"FOO" => vec!["aap", "noot", "mies"],
 			"BAR" => vec!["wim", "zus", "jet"]
-		}));
+		)));
 	}
 }

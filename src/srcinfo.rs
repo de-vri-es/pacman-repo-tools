@@ -22,22 +22,22 @@
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 use std;
+use std::collections::btree_map::Entry;
 use std::collections::BTreeMap as Map;
-use std::collections::btree_map::Entry as Entry;
 use std::ffi::OsStr;
 use std::io::Error as IoError;
-use std::path::{Path,PathBuf};
+use std::path::{Path, PathBuf};
 
 use walkdir::{DirEntry, WalkDir};
 
 use crate::error::ParseError;
 use crate::package::{Package, PartialPackage};
-use crate::parse::{partition, parse_depends, parse_provides};
+use crate::parse::{parse_depends, parse_provides, partition};
 
-use slice_tracker::{SliceTracker, Source, FileTracker};
+use slice_tracker::{FileTracker, SliceTracker, Source};
 
 type SourceTracker<'a> = SliceTracker<String, Source<str>>;
-type ParseResult<'a, T>   = std::result::Result<T, ParseError<'a>>;
+type ParseResult<'a, T> = std::result::Result<T, ParseError<'a>>;
 type DbResult<'a, T> = std::result::Result<T, ReadDbError<'a>>;
 
 #[derive(Debug)]
@@ -89,46 +89,58 @@ fn set_once_err<'a, T>(option: &mut Option<T>, value: T, key: &'a str) -> ParseR
 fn insert_err<'a, V: Eq>(map: &mut Map<&'a str, V>, map_name: &str, entry: (&'a str, impl Into<V>)) -> ParseResult<'a, ()> {
 	let (key, value) = entry;
 	match map.entry(key.into()) {
-		Entry::Vacant(x)   => { x.insert(value.into()); Ok(()) },
+		Entry::Vacant(x) => {
+			x.insert(value.into());
+			Ok(())
+		},
 		Entry::Occupied(x) => {
 			if x.get() == &value.into() {
 				Ok(())
 			} else {
-				Err(ParseError::with_token(key, format!("duplicate {} with different value: {}", map_name, key)))
+				Err(ParseError::with_token(
+					key,
+					format!("duplicate {} with different value: {}", map_name, key),
+				))
 			}
-		}
+		},
 	}
 }
 
 fn parse_data_line<'a, I>(data_iterator: &mut std::iter::Peekable<I>, package: &mut PartialPackage<'a>) -> ParseResult<'a, bool>
-	where I: 'a + Iterator<Item = ParseResult<'a, (&'a str, &'a str)>>
+where
+	I: 'a + Iterator<Item = ParseResult<'a, (&'a str, &'a str)>>,
 {
 	let (key, value) = match data_iterator.peek() {
-		None         => return Ok(true),
+		None => return Ok(true),
 		Some(&ref x) => (*x).clone()?,
 	};
 
 	match key {
-		"pkgname"      => return Ok(true),
-		"epoch"        => set_once_err(&mut package.epoch, value.parse().map_err(|x| ParseError::with_token(value, format!("invalid {}: {}", key, x)))?, key)?,
-		"pkgver"       => set_once_err(&mut package.pkgver, value, key)?,
-		"pkgrel"       => set_once_err(&mut package.pkgrel, value, key)?,
-		"url"          => set_once_err(&mut package.url, value.into(), key)?,
-		"pkgdesc"      => set_once_err(&mut package.description, value.into(), key)?,
+		"pkgname" => return Ok(true),
+		"epoch" => {
+			let value = value
+				.parse()
+				.map_err(|x| ParseError::with_token(value, format!("invalid {}: {}", key, x)))?;
+			set_once_err(&mut package.epoch, value, key)?;
+		},
+		"pkgver" => set_once_err(&mut package.pkgver, value, key)?,
+		"pkgrel" => set_once_err(&mut package.pkgrel, value, key)?,
+		"url" => set_once_err(&mut package.url, value.into(), key)?,
+		"pkgdesc" => set_once_err(&mut package.description, value.into(), key)?,
 
-		"license"      => package.licenses.get_or_insert(Default::default()).push(value.into()),
-		"groups"       => package.groups.get_or_insert(Default::default()).push(value.into()),
-		"backup"       => package.backup.get_or_insert(Default::default()).push(value.into()),
+		"license" => package.licenses.get_or_insert(Default::default()).push(value.into()),
+		"groups" => package.groups.get_or_insert(Default::default()).push(value.into()),
+		"backup" => package.backup.get_or_insert(Default::default()).push(value.into()),
 
-		"provides"     => insert_err(package.provides.get_or_insert(Default::default()), key, parse_provides(value))?,
-		"conflicts"    => insert_err(package.conflicts.get_or_insert(Default::default()), key, parse_depends(value))?,
-		"replaces"     => insert_err(package.replaces.get_or_insert(Default::default()), key, parse_depends(value))?,
+		"provides" => insert_err(package.provides.get_or_insert(Default::default()), key, parse_provides(value))?,
+		"conflicts" => insert_err(package.conflicts.get_or_insert(Default::default()), key, parse_depends(value))?,
+		"replaces" => insert_err(package.replaces.get_or_insert(Default::default()), key, parse_depends(value))?,
 
-		"depends"      => insert_err(package.depends.get_or_insert(Default::default()), key, parse_depends(value))?,
-		"optdepends"   => insert_err(package.opt_depends.get_or_insert(Default::default()), key, parse_depends(value))?,
-		"makedepends"  => insert_err(package.make_depends.get_or_insert(Default::default()), key, parse_depends(value))?,
+		"depends" => insert_err(package.depends.get_or_insert(Default::default()), key, parse_depends(value))?,
+		"optdepends" => insert_err(package.opt_depends.get_or_insert(Default::default()), key, parse_depends(value))?,
+		"makedepends" => insert_err(package.make_depends.get_or_insert(Default::default()), key, parse_depends(value))?,
 		"checkdepends" => insert_err(package.check_depends.get_or_insert(Default::default()), key, parse_depends(value))?,
-		_              => (), // ignore unknown keys
+		_ => (), // ignore unknown keys
 	}
 
 	data_iterator.next();
@@ -136,14 +148,16 @@ fn parse_data_line<'a, I>(data_iterator: &mut std::iter::Peekable<I>, package: &
 }
 
 fn parse_data_lines<'a, I>(data_iterator: &mut std::iter::Peekable<I>, mut package: PartialPackage<'a>) -> ParseResult<'a, PartialPackage<'a>>
-	where I: 'a + Iterator<Item = ParseResult<'a, (&'a str, &'a str)>>
+where
+	I: 'a + Iterator<Item = ParseResult<'a, (&'a str, &'a str)>>,
 {
 	while !parse_data_line(data_iterator, &mut package)? {}
 	Ok(package)
 }
 
 fn parse_base<'a, I>(data_iterator: &mut std::iter::Peekable<I>) -> ParseResult<'a, PartialPackage<'a>>
-	where I: 'a + Iterator<Item = ParseResult<'a, (&'a str, &'a str)>>
+where
+	I: 'a + Iterator<Item = ParseResult<'a, (&'a str, &'a str)>>,
 {
 	let base = parse_data_lines(data_iterator, PartialPackage::default())?;
 	if base.pkgver.is_none() {
@@ -156,25 +170,28 @@ fn parse_base<'a, I>(data_iterator: &mut std::iter::Peekable<I>) -> ParseResult<
 }
 
 fn parse_package<'a, I>(data_iterator: &mut std::iter::Peekable<I>, base: &PartialPackage<'a>) -> Option<ParseResult<'a, PartialPackage<'a>>>
-	where I: 'a + Iterator<Item = ParseResult<'a, (&'a str, &'a str)>>
+where
+	I: 'a + Iterator<Item = ParseResult<'a, (&'a str, &'a str)>>,
 {
 	let (key, pkgname) = match data_iterator.next() {
-		None         => return None,
+		None => return None,
 		Some(Err(x)) => return Some(Err(x)),
-		Some(Ok(x))  => x,
+		Some(Ok(x)) => x,
 	};
 
-	if key != "pkgname" { panic!("logic error: next item in iterator had to be pkgname"); }
+	if key != "pkgname" {
+		panic!("logic error: next item in iterator had to be pkgname");
+	}
 
 	let mut package = PartialPackage::default();
 	package.pkgname = Some(pkgname);
-	package.epoch   = base.epoch;
-	package.pkgver  = base.pkgver;
-	package.pkgrel  = base.pkgrel;
+	package.epoch = base.epoch;
+	package.pkgver = base.pkgver;
+	package.pkgrel = base.pkgrel;
 
 	let mut package = match parse_data_lines(data_iterator, package) {
 		Err(x) => return Some(Err(x)),
-		Ok(x)  => x,
+		Ok(x) => x,
 	};
 
 	package.add_base(base);
@@ -188,7 +205,8 @@ struct PackageIterator<'a, DataIterator: Iterator<Item = ParseResult<'a, (&'a st
 }
 
 impl<'a, DataIterator> PackageIterator<'a, DataIterator>
-	where DataIterator: 'a + Iterator<Item = ParseResult<'a, (&'a str, &'a str)>>
+where
+	DataIterator: 'a + Iterator<Item = ParseResult<'a, (&'a str, &'a str)>>,
 {
 	pub fn new(data_iterator: DataIterator) -> Self {
 		PackageIterator {
@@ -197,11 +215,11 @@ impl<'a, DataIterator> PackageIterator<'a, DataIterator>
 			base_done: false,
 		}
 	}
-
 }
 
 impl<'a, DataIterator> Iterator for PackageIterator<'a, DataIterator>
-	where DataIterator: 'a + Iterator<Item = ParseResult<'a, (&'a str, &'a str)>>
+where
+	DataIterator: 'a + Iterator<Item = ParseResult<'a, (&'a str, &'a str)>>,
 {
 	type Item = ParseResult<'a, Package<'a>>;
 
@@ -210,7 +228,7 @@ impl<'a, DataIterator> Iterator for PackageIterator<'a, DataIterator>
 		if !std::mem::replace(&mut self.base_done, true) {
 			self.base = match parse_base(&mut self.data_iterator) {
 				Err(x) => return Some(Err(x)),
-				Ok(x)  => x,
+				Ok(x) => x,
 			}
 		}
 
@@ -226,28 +244,36 @@ pub fn parse_srcinfo_blob<'a>(blob: &'a str) -> impl Iterator<Item = ParseResult
 
 /// Find all .SRCINFO files in a given directory.
 pub fn walk_srcinfo_files<P: ?Sized + AsRef<Path>>(directory: &P) -> impl Iterator<Item = walkdir::Result<DirEntry>> {
-	WalkDir::new(directory).into_iter().filter(|x|
+	WalkDir::new(directory).into_iter().filter(|x| {
 		if let &Ok(ref entry) = x {
 			entry.file_type().is_file() && entry.path().file_name() == Some(OsStr::new(".SRCINFO"))
 		} else {
 			true
 		}
-	)
+	})
 }
 
-pub fn parse_srcinfo_dir<'a, P>(tracker: &'a SourceTracker, directory: &P) -> DbResult<'a, Map<&'a str, (PathBuf, Package<'a>)>> where P: ?Sized + AsRef<Path> {
+pub fn parse_srcinfo_dir<'a, P>(tracker: &'a SourceTracker, directory: &P) -> DbResult<'a, Map<&'a str, (PathBuf, Package<'a>)>>
+where
+	P: ?Sized + AsRef<Path>,
+{
 	let mut result = Map::default();
 	for entry in walk_srcinfo_files(directory) {
-		let entry    = entry.map_err(ReadDbError::WalkError)?;
-		let path     = entry.path();
-		let data     = tracker.insert_file(path).map_err(|x| ReadDbError::IoError(path.into(), x))?;
+		let entry = entry.map_err(ReadDbError::WalkError)?;
+		let path = entry.path();
+		let data = tracker.insert_file(path).map_err(|x| ReadDbError::IoError(path.into(), x))?;
 		for package in parse_srcinfo_blob(&data) {
 			match package {
 				Err(x) => return Err(ReadDbError::ParseError(path.into(), x)),
 				Ok(package) => match result.entry(package.pkgname) {
-					Entry::Occupied(_) => return Err(ReadDbError::ParseError(path.into(), ParseError::no_token(format!("duplicate package name: {}", package.pkgname)))),
-					Entry::Vacant(x)   => x.insert((path.into(), package)),
-				}
+					Entry::Occupied(_) => {
+						return Err(ReadDbError::ParseError(
+							path.into(),
+							ParseError::no_token(format!("duplicate package name: {}", package.pkgname)),
+						))
+					},
+					Entry::Vacant(x) => x.insert((path.into(), package)),
+				},
 			};
 		}
 	}
@@ -266,10 +292,7 @@ mod test {
 	#[test]
 	fn test_simple() {
 		let blob = ["a=b", "c=d"].join("\n");
-		assert!(iterate_info_vec(&blob) == Ok(vec![
-			("a", "b"),
-			("c", "d"),
-		]))
+		assert!(iterate_info_vec(&blob) == Ok(vec![("a", "b"), ("c", "d"),]))
 	}
 
 	#[test]
@@ -285,5 +308,4 @@ mod test {
 		assert_eq!(iterator.next(), Some(Ok(("a", "b"))));
 		assert_eq!(iterator.next(), None);
 	}
-
 }

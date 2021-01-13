@@ -1,4 +1,3 @@
-
 // Copyright (c) 2017, Maarten de Vries
 //
 // Redistribution and use in source and binary forms, with or without
@@ -22,12 +21,12 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-mod types;
 mod compare;
 mod parse;
+mod types;
 
 pub use self::types::Version;
 pub use self::types::VersionBuf;
 
-pub use self::compare::compare_version_string;
 pub use self::compare::compare_package_version;
+pub use self::compare::compare_version_string;

@@ -2,11 +2,7 @@ use crate::parse::{partition, rpartition};
 
 pub fn consume_epoch(version: &mut &str) -> Option<i32> {
 	let (epoch, rest) = partition(version, ':')?;
-	let epoch = if epoch.is_empty() {
-		0
-	} else {
-		epoch.parse().ok()?
-	};
+	let epoch = if epoch.is_empty() { 0 } else { epoch.parse().ok()? };
 	*version = rest;
 	Some(epoch)
 }

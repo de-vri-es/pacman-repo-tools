@@ -5,7 +5,7 @@ use super::parse::consume_pkgrel;
 use std;
 
 /// A view into a string, split into version parts.
-#[derive(Copy,Clone,Debug)]
+#[derive(Copy, Clone, Debug)]
 pub struct Version<'a> {
 	pub epoch: i32,
 	pub pkgver: &'a str,
@@ -13,7 +13,7 @@ pub struct Version<'a> {
 }
 
 /// A package version with epoch, pkgver and pkgrel.
-#[derive(Clone,Debug)]
+#[derive(Clone, Debug)]
 pub struct VersionBuf {
 	pub epoch: i32,
 	pub pkgver: String,
@@ -21,26 +21,28 @@ pub struct VersionBuf {
 }
 
 impl<'a> Version<'a> {
-	pub fn new(epoch: i32, pkgver: &'a str, pkgrel: Option<&'a str>) -> Version<'a>{
-		Version{epoch, pkgver, pkgrel}
+	pub fn new(epoch: i32, pkgver: &'a str, pkgrel: Option<&'a str>) -> Version<'a> {
+		Version { epoch, pkgver, pkgrel }
 	}
 
 	pub fn from_str(version: &str) -> Version {
 		let mut version = version;
-		let epoch  = consume_epoch(&mut version).unwrap_or(0);
+		let epoch = consume_epoch(&mut version).unwrap_or(0);
 		let pkgrel = consume_pkgrel(&mut version).map(|x| x.into());
 		let pkgver = version.into();
-		Version{epoch, pkgver, pkgrel}
+		Version { epoch, pkgver, pkgrel }
 	}
 }
 
 impl<'a> From<&'a str> for Version<'a> {
-	fn from(blob: &'a str) -> Self { Self::from_str(blob) }
+	fn from(blob: &'a str) -> Self {
+		Self::from_str(blob)
+	}
 }
 
 impl VersionBuf {
 	pub fn new(epoch: i32, pkgver: String, pkgrel: Option<String>) -> VersionBuf {
-		VersionBuf{epoch, pkgver, pkgrel}
+		VersionBuf { epoch, pkgver, pkgrel }
 	}
 
 	pub fn from_string(s: String) -> VersionBuf {
@@ -49,7 +51,9 @@ impl VersionBuf {
 }
 
 impl<'a> From<String> for VersionBuf {
-	fn from(blob: String) -> Self { Self::from_string(blob) }
+	fn from(blob: String) -> Self {
+		Self::from_string(blob)
+	}
 }
 
 impl_ord_requisites!('a; Version<'a>);
@@ -58,10 +62,10 @@ impl<'a> Ord for Version<'a> {
 		return_not_equal!(self.epoch.cmp(&other.epoch));
 		return_not_equal!(compare_version_string(self.pkgver, other.pkgver));
 		match (self.pkgrel, other.pkgrel) {
-			(None, None)       => std::cmp::Ordering::Equal,
-			(None, Some(_))    => std::cmp::Ordering::Less,
-			(Some(_), None)    => std::cmp::Ordering::Greater,
-			(Some(a), Some(b)) => compare_version_string(a, b)
+			(None, None) => std::cmp::Ordering::Equal,
+			(None, Some(_)) => std::cmp::Ordering::Less,
+			(Some(_), None) => std::cmp::Ordering::Greater,
+			(Some(a), Some(b)) => compare_version_string(a, b),
 		}
 	}
 }
@@ -69,7 +73,7 @@ impl<'a> Ord for Version<'a> {
 impl_ord_requisites!(VersionBuf);
 impl Ord for VersionBuf {
 	fn cmp(&self, other: &VersionBuf) -> std::cmp::Ordering {
-		let as_ref : Version = self.into();
+		let as_ref: Version = self.into();
 		as_ref.cmp(&other.into())
 	}
 }
@@ -77,22 +81,14 @@ impl Ord for VersionBuf {
 // Conversion from Version to VersionBuf
 impl<'a> From<Version<'a>> for VersionBuf {
 	fn from(version: Version<'a>) -> VersionBuf {
-		VersionBuf::new(
-			version.epoch,
-			version.pkgver.to_string(),
-			version.pkgrel.as_ref().map(|x| x.to_string())
-		)
+		VersionBuf::new(version.epoch, version.pkgver.to_string(), version.pkgrel.as_ref().map(|x| x.to_string()))
 	}
 }
 
 // Conversion from &VersionBuf to Version.
 impl<'a> From<&'a VersionBuf> for Version<'a> {
 	fn from(version: &'a VersionBuf) -> Version<'a> {
-		Version::new(
-			version.epoch,
-			version.pkgver.as_ref(),
-			version.pkgrel.as_ref().map(|x| x.as_ref())
-		)
+		Version::new(version.epoch, version.pkgver.as_ref(), version.pkgrel.as_ref().map(|x| x.as_ref()))
 	}
 }
 
@@ -100,9 +96,9 @@ impl<'a> From<&'a VersionBuf> for Version<'a> {
 impl<'a> std::fmt::Display for Version<'a> {
 	fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
 		match (self.epoch, self.pkgrel) {
-			(0,     None        ) => f.write_str(self.pkgver),
-			(0,     Some(pkgrel)) => f.write_fmt(format_args!("{}-{}", self.pkgver, pkgrel)),
-			(epoch, None        ) => f.write_fmt(format_args!("{}:{}", epoch, self.pkgver)),
+			(0, None) => f.write_str(self.pkgver),
+			(0, Some(pkgrel)) => f.write_fmt(format_args!("{}-{}", self.pkgver, pkgrel)),
+			(epoch, None) => f.write_fmt(format_args!("{}:{}", epoch, self.pkgver)),
 			(epoch, Some(pkgrel)) => f.write_fmt(format_args!("{}:{}-{}", epoch, self.pkgver, pkgrel)),
 		}
 	}

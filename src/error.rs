@@ -8,7 +8,10 @@ pub struct ParseError<'a> {
 
 impl<'a> ParseError<'a> {
 	pub fn new(message: impl Into<String>, token: Option<&'a str>) -> ParseError<'a> {
-		ParseError{message: message.into(), token: token}
+		ParseError {
+			message: message.into(),
+			token,
+		}
 	}
 
 	pub fn with_token(token: &'a str, message: impl Into<String>) -> ParseError<'a> {
