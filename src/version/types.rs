@@ -59,8 +59,14 @@ impl<'a> From<String> for VersionBuf {
 impl_ord_requisites!('a; Version<'a>);
 impl<'a> Ord for Version<'a> {
 	fn cmp(&self, other: &Version) -> std::cmp::Ordering {
-		return_not_equal!(self.epoch.cmp(&other.epoch));
-		return_not_equal!(compare_version_string(self.pkgver, other.pkgver));
+		match self.epoch.cmp(&other.epoch) {
+			std::cmp::Ordering::Equal => (),
+			x => return x,
+		}
+		match compare_version_string(self.pkgver, other.pkgver) {
+			std::cmp::Ordering::Equal => (),
+			x => return x,
+		}
 		match (self.pkgrel, other.pkgrel) {
 			(None, None) => std::cmp::Ordering::Equal,
 			(None, Some(_)) => std::cmp::Ordering::Less,

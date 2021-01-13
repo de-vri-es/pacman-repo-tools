@@ -9,15 +9,3 @@ macro_rules! impl_ord_requisites {
 	);
 	($type:ty) => (impl_ord_requisites!('a; $type);)
 }
-
-#[macro_export]
-#[rustfmt::skip]
-macro_rules! return_not_equal {
-	($a:expr) => {
-		match $a {
-			std::cmp::Ordering::Equal => (),
-			std::cmp::Ordering::Less => return std::cmp::Ordering::Less,
-			std::cmp::Ordering::Greater => return std::cmp::Ordering::Greater,
-		}
-	};
-}
