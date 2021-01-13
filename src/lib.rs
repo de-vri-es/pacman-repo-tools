@@ -21,8 +21,6 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#![feature(pattern)]
-
 #[macro_use]
 mod macros;
 
@@ -33,4 +31,3 @@ pub mod srcinfo;
 pub mod version;
 
 mod parse;
-mod util;

@@ -24,15 +24,9 @@
 use std::collections::BTreeMap;
 
 use crate::error::ParseError;
-use crate::util::ConsumableStr;
 
 fn parse_key(line: &str) -> Option<&str> {
-	let mut line = line;
-	if line.consume_front_n(1) == Some("%") && line.consume_back_n(1) == Some("%") {
-		Some(line)
-	} else {
-		None
-	}
+	line.strip_prefix('%')?.strip_suffix('%')
 }
 
 pub fn parse_dict(blob: &str) -> Result<BTreeMap<&str, Vec<&str>>, ParseError> {

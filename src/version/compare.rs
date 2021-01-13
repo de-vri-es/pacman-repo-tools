@@ -1,7 +1,16 @@
 use std::cmp::Ordering;
 
 use super::Version;
-use crate::util::ConsumableStr;
+
+fn consume_while<'a, F>(input: &mut &'a str, mut condition: F) -> &'a str
+where
+	F: FnMut(char) -> bool,
+{
+	let i = input.find(|c| !condition(c)).unwrap_or(input.len());
+	let (result, remainder) = input.split_at(i);
+	*input = remainder;
+	result
+}
 
 pub fn compare_version_string(a: &str, b: &str) -> Ordering {
 	let mut a = a;
@@ -10,15 +19,15 @@ pub fn compare_version_string(a: &str, b: &str) -> Ordering {
 	// Loop over the alphanumeric parts.
 	while !a.is_empty() || !b.is_empty() {
 		// Get the first alphanumeric component.
-		let mut a_alnum = a.consume_front_while(|x: char| x.is_alphanumeric());
-		let mut b_alnum = b.consume_front_while(|x: char| x.is_alphanumeric());
+		let mut a_alnum = consume_while(&mut a, |x| x.is_alphanumeric());
+		let mut b_alnum = consume_while(&mut b, |x| x.is_alphanumeric());
 
 		// Loop over the numeric and alphabetical parts.
 		while !a_alnum.is_empty() || !b_alnum.is_empty() {
-			let a_num   = a_alnum.consume_front_while(|x: char| x.is_digit(10));
-			let b_num   = b_alnum.consume_front_while(|x: char| x.is_digit(10));
-			let a_alpha = a_alnum.consume_front_while(|x: char| x.is_alphabetic());
-			let b_alpha = b_alnum.consume_front_while(|x: char| x.is_alphabetic());
+			let a_num   = consume_while(&mut a_alnum, |x| x.is_digit(10));
+			let b_num   = consume_while(&mut b_alnum, |x| x.is_digit(10));
+			let a_alpha = consume_while(&mut a_alnum, |x| x.is_alphabetic());
+			let b_alpha = consume_while(&mut b_alnum, |x| x.is_alphabetic());
 
 			// Parse the numeric part.
 			let a_num = if a_num.is_empty() { -1 } else { a_num.parse::<i32>().unwrap() };
@@ -36,8 +45,8 @@ pub fn compare_version_string(a: &str, b: &str) -> Ordering {
 
 		// Drop the non-alphanumeric separator.
 		// If only one has a separator, it's a newer version.
-		let a_sep = a.consume_front_while(|x: char| !x.is_alphanumeric());
-		let b_sep = b.consume_front_while(|x: char| !x.is_alphanumeric());
+		let a_sep = consume_while(&mut a, |x| !x.is_alphanumeric());
+		let b_sep = consume_while(&mut b, |x| !x.is_alphanumeric());
 		let ordering = (!a_sep.is_empty()).cmp(&!b_sep.is_empty());
 		if ordering != Ordering::Equal { return ordering }
 	}

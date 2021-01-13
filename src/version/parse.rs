@@ -1,21 +1,20 @@
-use crate::util::ConsumableStr;
+use crate::parse::{partition, rpartition};
 
-pub fn consume_epoch(v: &mut &str) -> Option<i32> {
-	let mut a: &str = v;
-	let epoch = a.consume_front_while(|x: char| x.is_digit(10));
-	if a.consume_front_n(1) == Some(":") {
-		*v = a;
-		Some(if epoch.is_empty() {0} else {epoch.parse().unwrap()})
+pub fn consume_epoch(version: &mut &str) -> Option<i32> {
+	let (epoch, rest) = partition(version, ':')?;
+	let epoch = if epoch.is_empty() {
+		0
 	} else {
-		None
-	}
+		epoch.parse().ok()?
+	};
+	*version = rest;
+	Some(epoch)
 }
 
-pub fn consume_pkgrel<'a>(v: &mut &'a str) -> Option<&'a str> {
-	v.rpartition('-').map(|(rest, _, pkgrel)| {
-		*v = rest;
-		pkgrel
-	})
+pub fn consume_pkgrel<'a>(version: &mut &'a str) -> Option<&'a str> {
+	let (rest, pkgrel) = rpartition(version, '-')?;
+	*version = rest;
+	Some(pkgrel)
 }
 
 #[cfg(test)]

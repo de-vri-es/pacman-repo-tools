@@ -32,13 +32,12 @@ use walkdir::{DirEntry, WalkDir};
 
 use crate::error::ParseError;
 use crate::package::{Package, PartialPackage};
-use crate::parse::{parse_depends, parse_provides};
-use crate::util::{ConsumableStr, DefaultOption};
+use crate::parse::{partition, parse_depends, parse_provides};
 
 use slice_tracker::{SliceTracker, Source, FileTracker};
 
 type SourceTracker<'a> = SliceTracker<String, Source<str>>;
-type Result<'a, T>   = std::result::Result<T, ParseError<'a>>;
+type ParseResult<'a, T>   = std::result::Result<T, ParseError<'a>>;
 type DbResult<'a, T> = std::result::Result<T, ReadDbError<'a>>;
 
 #[derive(Debug)]
@@ -64,19 +63,21 @@ impl<'a> std::fmt::Display for ReadDbError<'a> {
 /// All whitespace around keys or values is removed.
 ///
 /// Empty lines are discarded.
-pub fn iterate_info<'a>(blob: &'a str) -> impl Iterator<Item = Result<'a, (&'a str, &'a str)>> {
+pub fn iterate_info<'a>(blob: &'a str) -> impl Iterator<Item = ParseResult<'a, (&'a str, &'a str)>> {
 	blob.split('\n').filter_map(move |line| {
 		let line = line.trim();
 		if line.is_empty() {
 			return None;
 		}
-		let result = line.partition('=').map(|(key, _, value)| (key.trim(), value.trim()));
-		let result = result.ok_or_else(|| ParseError::with_token(line, "expected 'key = value' or empty line"));
-		Some(result)
+		let (key, value) = match partition(line, '=') {
+			Some(x) => x,
+			None => return Some(Err(ParseError::with_token(line, "expected 'key = value' or empty line"))),
+		};
+		Some(Ok((key.trim(), value.trim())))
 	})
 }
 
-fn set_once_err<'a, T>(option: &mut Option<T>, value: T, key: &'a str) -> Result<'a, ()> {
+fn set_once_err<'a, T>(option: &mut Option<T>, value: T, key: &'a str) -> ParseResult<'a, ()> {
 	if option.is_some() {
 		Err(ParseError::with_token(key, format!("duplicate key: {}", key)))
 	} else {
@@ -85,7 +86,7 @@ fn set_once_err<'a, T>(option: &mut Option<T>, value: T, key: &'a str) -> Result
 	}
 }
 
-fn insert_err<'a, V: Eq>(map: &mut Map<&'a str, V>, map_name: &str, entry: (&'a str, impl Into<V>)) -> Result<'a, ()> {
+fn insert_err<'a, V: Eq>(map: &mut Map<&'a str, V>, map_name: &str, entry: (&'a str, impl Into<V>)) -> ParseResult<'a, ()> {
 	let (key, value) = entry;
 	match map.entry(key.into()) {
 		Entry::Vacant(x)   => { x.insert(value.into()); Ok(()) },
@@ -99,8 +100,8 @@ fn insert_err<'a, V: Eq>(map: &mut Map<&'a str, V>, map_name: &str, entry: (&'a 
 	}
 }
 
-fn parse_data_line<'a, I>(data_iterator: &mut std::iter::Peekable<I>, package: &mut PartialPackage<'a>) -> Result<'a, bool>
-	where I: 'a + Iterator<Item = Result<'a, (&'a str, &'a str)>>
+fn parse_data_line<'a, I>(data_iterator: &mut std::iter::Peekable<I>, package: &mut PartialPackage<'a>) -> ParseResult<'a, bool>
+	where I: 'a + Iterator<Item = ParseResult<'a, (&'a str, &'a str)>>
 {
 	let (key, value) = match data_iterator.peek() {
 		None         => return Ok(true),
@@ -109,24 +110,24 @@ fn parse_data_line<'a, I>(data_iterator: &mut std::iter::Peekable<I>, package: &
 
 	match key {
 		"pkgname"      => return Ok(true),
-		"epoch"        => set_once_err(&mut package.epoch,  value.parse().map_err(|x| ParseError::with_token(value, format!("invalid {}: {}", key, x)))?, key)?,
+		"epoch"        => set_once_err(&mut package.epoch, value.parse().map_err(|x| ParseError::with_token(value, format!("invalid {}: {}", key, x)))?, key)?,
 		"pkgver"       => set_once_err(&mut package.pkgver, value, key)?,
 		"pkgrel"       => set_once_err(&mut package.pkgrel, value, key)?,
 		"url"          => set_once_err(&mut package.url, value.into(), key)?,
 		"pkgdesc"      => set_once_err(&mut package.description, value.into(), key)?,
 
-		"license"      => package.licenses.get_or_default().push(value.into()),
-		"groups"       => package.groups.get_or_default().push(value.into()),
-		"backup"       => package.backup.get_or_default().push(value.into()),
+		"license"      => package.licenses.get_or_insert(Default::default()).push(value.into()),
+		"groups"       => package.groups.get_or_insert(Default::default()).push(value.into()),
+		"backup"       => package.backup.get_or_insert(Default::default()).push(value.into()),
 
-		"provides"     => insert_err(package.provides.get_or_default(),  key, parse_provides(value))?,
-		"conflicts"    => insert_err(package.conflicts.get_or_default(), key, parse_depends(value))?,
-		"replaces"     => insert_err(package.replaces.get_or_default(),  key, parse_depends(value))?,
+		"provides"     => insert_err(package.provides.get_or_insert(Default::default()), key, parse_provides(value))?,
+		"conflicts"    => insert_err(package.conflicts.get_or_insert(Default::default()), key, parse_depends(value))?,
+		"replaces"     => insert_err(package.replaces.get_or_insert(Default::default()), key, parse_depends(value))?,
 
-		"depends"      => insert_err(package.depends.get_or_default(),       key, parse_depends(value))?,
-		"optdepends"   => insert_err(package.opt_depends.get_or_default(),   key, parse_depends(value))?,
-		"makedepends"  => insert_err(package.make_depends.get_or_default(),  key, parse_depends(value))?,
-		"checkdepends" => insert_err(package.check_depends.get_or_default(), key, parse_depends(value))?,
+		"depends"      => insert_err(package.depends.get_or_insert(Default::default()), key, parse_depends(value))?,
+		"optdepends"   => insert_err(package.opt_depends.get_or_insert(Default::default()), key, parse_depends(value))?,
+		"makedepends"  => insert_err(package.make_depends.get_or_insert(Default::default()), key, parse_depends(value))?,
+		"checkdepends" => insert_err(package.check_depends.get_or_insert(Default::default()), key, parse_depends(value))?,
 		_              => (), // ignore unknown keys
 	}
 
@@ -134,15 +135,15 @@ fn parse_data_line<'a, I>(data_iterator: &mut std::iter::Peekable<I>, package: &
 	Ok(false)
 }
 
-fn parse_data_lines<'a, I>(data_iterator: &mut std::iter::Peekable<I>, mut package: PartialPackage<'a>) -> Result<'a, PartialPackage<'a>>
-	where I: 'a + Iterator<Item = Result<'a, (&'a str, &'a str)>>
+fn parse_data_lines<'a, I>(data_iterator: &mut std::iter::Peekable<I>, mut package: PartialPackage<'a>) -> ParseResult<'a, PartialPackage<'a>>
+	where I: 'a + Iterator<Item = ParseResult<'a, (&'a str, &'a str)>>
 {
 	while !parse_data_line(data_iterator, &mut package)? {}
 	Ok(package)
 }
 
-fn parse_base<'a, I>(data_iterator: &mut std::iter::Peekable<I>) -> Result<'a, PartialPackage<'a>>
-	where I: 'a + Iterator<Item = Result<'a, (&'a str, &'a str)>>
+fn parse_base<'a, I>(data_iterator: &mut std::iter::Peekable<I>) -> ParseResult<'a, PartialPackage<'a>>
+	where I: 'a + Iterator<Item = ParseResult<'a, (&'a str, &'a str)>>
 {
 	let base = parse_data_lines(data_iterator, PartialPackage::default())?;
 	if base.pkgver.is_none() {
@@ -154,8 +155,8 @@ fn parse_base<'a, I>(data_iterator: &mut std::iter::Peekable<I>) -> Result<'a, P
 	}
 }
 
-fn parse_package<'a, I>(data_iterator: &mut std::iter::Peekable<I>, base: &PartialPackage<'a>) -> Option<Result<'a, PartialPackage<'a>>>
-	where I: 'a + Iterator<Item = Result<'a, (&'a str, &'a str)>>
+fn parse_package<'a, I>(data_iterator: &mut std::iter::Peekable<I>, base: &PartialPackage<'a>) -> Option<ParseResult<'a, PartialPackage<'a>>>
+	where I: 'a + Iterator<Item = ParseResult<'a, (&'a str, &'a str)>>
 {
 	let (key, pkgname) = match data_iterator.next() {
 		None         => return None,
@@ -180,14 +181,14 @@ fn parse_package<'a, I>(data_iterator: &mut std::iter::Peekable<I>, base: &Parti
 	Some(Ok(package))
 }
 
-struct PackageIterator<'a, DataIterator: Iterator<Item = Result<'a, (&'a str, &'a str)>>> {
+struct PackageIterator<'a, DataIterator: Iterator<Item = ParseResult<'a, (&'a str, &'a str)>>> {
 	data_iterator: std::iter::Peekable<DataIterator>,
 	base: PartialPackage<'a>,
 	base_done: bool,
 }
 
 impl<'a, DataIterator> PackageIterator<'a, DataIterator>
-	where DataIterator: 'a + Iterator<Item = Result<'a, (&'a str, &'a str)>>
+	where DataIterator: 'a + Iterator<Item = ParseResult<'a, (&'a str, &'a str)>>
 {
 	pub fn new(data_iterator: DataIterator) -> Self {
 		PackageIterator {
@@ -200,11 +201,11 @@ impl<'a, DataIterator> PackageIterator<'a, DataIterator>
 }
 
 impl<'a, DataIterator> Iterator for PackageIterator<'a, DataIterator>
-	where DataIterator: 'a + Iterator<Item = Result<'a, (&'a str, &'a str)>>
+	where DataIterator: 'a + Iterator<Item = ParseResult<'a, (&'a str, &'a str)>>
 {
-	type Item = Result<'a, Package<'a>>;
+	type Item = ParseResult<'a, Package<'a>>;
 
-	fn next(&mut self) -> Option<Result<'a, Package<'a>>> {
+	fn next(&mut self) -> Option<ParseResult<'a, Package<'a>>> {
 		// Make sure the pkgbase is parsed.
 		if !std::mem::replace(&mut self.base_done, true) {
 			self.base = match parse_base(&mut self.data_iterator) {
@@ -219,7 +220,7 @@ impl<'a, DataIterator> Iterator for PackageIterator<'a, DataIterator>
 	}
 }
 
-pub fn parse_srcinfo_blob<'a>(blob: &'a str) -> impl Iterator<Item = Result<'a, Package<'a>>> {
+pub fn parse_srcinfo_blob<'a>(blob: &'a str) -> impl Iterator<Item = ParseResult<'a, Package<'a>>> {
 	PackageIterator::new(iterate_info(blob))
 }
 

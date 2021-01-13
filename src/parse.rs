@@ -2,26 +2,47 @@ use crate::package::Constraint;
 use crate::package::VersionConstraint;
 use crate::version::Version;
 
-use crate::util::ConsumableStr;
+pub fn partition(input: &str, split: char) -> Option<(&str, &str)> {
+	if let Some(i) = input.find(split) {
+		Some((&input[..i], &input[i + 1..]))
+	} else {
+		None
+	}
+}
+
+pub fn rpartition(input: &str, split: char) -> Option<(&str, &str)> {
+	if let Some(i) = input.rfind(split) {
+		Some((&input[..i], &input[i + 1..]))
+	} else {
+		None
+	}
+}
 
 pub fn parse_provides(blob: &str) -> (&str, Option<Version>) {
-	if let Some((key, _, version)) = blob.partition('=') {
+	if let Some((key, version)) = partition(blob, '=') {
 		(key, Some(Version::from_str(version).into()))
 	} else {
 		(blob, None)
 	}
 }
 
-fn eat_constraint(blob: &str) -> (&str, Option<Constraint>) {
-	let mut blob = blob;
-	if false { unreachable!() }
-	else if blob.consume_front(">=").is_some() { (blob, Some(Constraint::GreaterEqual)) }
-	else if blob.consume_front("<=").is_some() { (blob, Some(Constraint::LessEqual)) }
-	else if blob.consume_front(">").is_some()  { (blob, Some(Constraint::Greater)) }
-	else if blob.consume_front("<").is_some()  { (blob, Some(Constraint::Less)) }
-	else if blob.consume_front("==").is_some() { (blob, Some(Constraint::Equal)) } // shame on you, packagers
-	else if blob.consume_front("=").is_some()  { (blob, Some(Constraint::Equal)) }
-	else { (blob, None) }
+fn parse_constraint(contraint: &str) -> Option<(Constraint, &str)> {
+	if let Some(version) = contraint.strip_prefix(">=") {
+		Some((Constraint::GreaterEqual, version))
+	} else if let Some(version) = contraint.strip_prefix("<=") {
+		Some((Constraint::LessEqual, version))
+	} else if let Some(version) = contraint.strip_prefix(">") {
+		Some((Constraint::Greater, version))
+	} else if let Some(version) = contraint.strip_prefix("<") {
+		Some((Constraint::Less, version))
+	} else if let Some(version) = contraint.strip_prefix("==") {
+		// Shame on you, packagers.
+		Some((Constraint::Equal, version))
+	} else if let Some(version) = contraint.strip_prefix("=") {
+		Some((Constraint::Equal, version))
+	} else {
+		None
+	}
 }
 
 fn is_constraint_char(c: char) -> bool {
@@ -31,8 +52,11 @@ fn is_constraint_char(c: char) -> bool {
 pub fn parse_depends(blob: &str) -> (&str, Option<VersionConstraint>) {
 	if let Some(start) = blob.find(is_constraint_char) {
 		let name = &blob[..start];
-		let (version, constraint) = eat_constraint(&blob[start..]);
-		(name, Some(VersionConstraint{version: Version::from_str(version).into(), constraint: constraint.unwrap()}))
+		let (constraint, version) = parse_constraint(&blob[start..]).unwrap();
+		(name, Some(VersionConstraint {
+			version: Version::from_str(version).into(),
+			constraint,
+		}))
 	} else {
 		(blob, None)
 	}
