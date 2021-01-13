@@ -106,12 +106,104 @@ fn read_files_to_vec(initial: Vec<String>, paths: &[impl AsRef<Path>]) -> Result
 	Ok(result)
 }
 
+/// Download and extract the given database files specified by the URLs to the given directory.
+async fn sync_dbs(directory: impl AsRef<Path>, urls: &[impl AsRef<str>]) -> Result<(), ()> {
+	let directory = directory.as_ref();
+
+	let mut names = std::collections::BTreeSet::new();
+	let mut repositories = Vec::new();
+
+	// TODO: check for duplicate database names
+	for url in urls {
+		let url = reqwest::Url::parse(url.as_ref())
+			.map_err(|e| eprintln!("Invalid URL: {}: {}", url.as_ref(), e))?;
+		let name = Path::new(url.path())
+			.file_name()
+			.ok_or_else(|| eprintln!("Could not determine file name from URL: {}", url))?
+			.to_str()
+			.ok_or_else(|| eprintln!("Invalid UTF-8 in URL: {}", url))?;
+
+		if !names.insert(name.to_string()) {
+			eprintln!("Error: duplicate repository name: {}", name);
+			return Err(())
+		}
+		repositories.push((name.to_string(), url));
+	}
+
+	for (name, url) in repositories {
+		download_database(&directory.join(name), url).await?
+	}
+	Ok(())
+}
+
+/// Download and extract a database file.
+async fn download_database(directory: &Path, url: reqwest::Url) -> Result<(), ()> {
+	// TODO: Record modified time and/or ETag to avoid downloading without cause.
+	eprintln!("Downloading {}", url);
+	let database = download_file(url).await.map_err(|e| eprintln!("Error: {}", e))?;
+	extract_archive(&directory, &database).await?;
+	Ok(())
+}
+
+/// Extract an archive in a directory using bsdtar.
+async fn extract_archive(directory: &Path, data: &[u8]) -> Result<(), ()> {
+	use tokio::io::AsyncWriteExt;
+
+	// Delete and re-create directory for extracting the archive.
+	remove_dir_all(directory)?;
+	make_dirs(directory)?;
+
+	// Spawn bsdtar process.
+	let mut process = tokio::process::Command::new("bsdtar")
+		.args(&["xf", "-"])
+		.current_dir(directory)
+		.stdin(std::process::Stdio::piped())
+		.spawn()
+		.map_err(|e| eprintln!("Error: failed to run bsdtar: {}", e))?;
+
+	// Write archive to standard input of bsdtar.
+	let mut stdin = process.stdin.take()
+		.ok_or_else(|| eprintln!("Error: failed to get stdin for bsdtar"))?;
+	stdin.write_all(data)
+		.await
+		.map_err(|e| eprintln!("Error: failed to write to bsdtar stdin: {}", e))?;
+	drop(stdin);
+
+	// Wait for bsdtar to finish.
+	let exit_status = process.wait()
+		.await
+		.map_err(|e| eprintln!("Error: failed to wait for bsdtar to exit: {}", e))?;
+
+	// Check the exit status.
+	if exit_status.success() {
+		Ok(())
+	} else {
+		eprintln!("Error: bsdtar exitted with {}", exit_status);
+		Err(())
+	}
+}
+
+/// Create a directory and all parent directories as needed.
 fn make_dirs(path: impl AsRef<Path>) -> Result<(), ()> {
 	let path = path.as_ref();
 	std::fs::create_dir_all(path)
 		.map_err(|e| eprintln!("Error: failed to create directiry {}: {}", path.display(), e))
 }
 
+/// Recursively remove a directory and it's content.
+fn remove_dir_all(path: impl AsRef<Path>) -> Result<(), ()> {
+	let path = path.as_ref();
+	match std::fs::remove_dir_all(path) {
+		Ok(()) => Ok(()),
+		Err(ref e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+		Err(e) => {
+			eprintln!("Error: failed to remove directory {} or it's content: {}", path.display(), e);
+			Err(())
+		}
+	}
+}
+
+/// Download a file over HTTP(S).
 async fn download_file(url: reqwest::Url) -> Result<Vec<u8>, reqwest::Error> {
 	let response = reqwest::get(url.clone())
 		.await?
@@ -119,61 +211,4 @@ async fn download_file(url: reqwest::Url) -> Result<Vec<u8>, reqwest::Error> {
 		.await?
 		.to_vec();
 	Ok(response)
-}
-
-/// Download and extract the given database files specified by the URLs to the given directory.
-async fn sync_dbs(directory: impl AsRef<Path>, urls: &[impl AsRef<str>]) -> Result<(), ()> {
-	let directory = directory.as_ref();
-
-	// TODO: check for duplicate database names
-
-	for url in urls {
-		download_database(directory, url).await?
-	}
-	Ok(())
-}
-
-async fn download_database(directory: &Path, url: impl AsRef<str>) -> Result<(), ()> {
-	let url = reqwest::Url::parse(url.as_ref())
-		.map_err(|e| eprintln!("Invalid URL: {}: {}", url.as_ref(), e))?;
-	let file_name = Path::new(url.path())
-		.file_name()
-		.ok_or_else(|| eprintln!("Could not determine file name from URL: {}", url))?;
-
-	let target = directory.join(file_name);
-	eprintln!("Downloading {}", url);
-	let database = download_file(url).await.map_err(|e| eprintln!("Error: {}", e))?;
-
-	extract_archive(&target, &database).await?;
-
-	Ok(())
-}
-
-async fn extract_archive(directory: &Path, data: &[u8]) -> Result<(), ()> {
-	use tokio::io::AsyncWriteExt;
-
-	make_dirs(directory)?;
-
-	let mut process = tokio::process::Command::new("bsdtar")
-		.args(&["xf", "-"])
-		.current_dir(directory)
-		.stdin(std::process::Stdio::piped())
-		.spawn()
-		.map_err(|e| eprintln!("Error: failed to run bsdtar: {}", e))?;
-	let mut stdin = process.stdin.take()
-		.ok_or_else(|| eprintln!("Error: failed to get stdin for bsdtar"))?;
-	stdin.write_all(data)
-		.await
-		.map_err(|e| eprintln!("Error: failed to write to bsdtar stdin: {}", e))?;
-	drop(stdin);
-	let exit_status = process.wait()
-		.await
-		.map_err(|e| eprintln!("Error: failed to wait for bsdtar to exit: {}", e))?;
-
-	if exit_status.success() {
-		Ok(())
-	} else {
-		eprintln!("Error: bsdtar exitted with {}", exit_status);
-		Err(())
-	}
 }
