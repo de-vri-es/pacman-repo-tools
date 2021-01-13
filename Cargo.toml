@@ -8,7 +8,7 @@ authors     = ["Maarten de Vries <maarten@de-vri.es>"]
 edition     = "2018"
 
 [dependencies]
-walkdir = "*"
+walkdir = "2.3.1"
 slice-tracker = {git = "https://github.com/de-vri-es/slice-tracker-rs"}
 
 [dev-dependencies]
