@@ -62,26 +62,27 @@ pub fn parse_dict(blob: &str) -> Result<BTreeMap<&str, Vec<&str>>, ParseError> {
 
 
 #[cfg(test)]
-mod tests {
+mod test {
 	use super::*;
 	use maplit::btreemap;
+	use assert2::assert;
 
 	#[test]
 	fn simple() {
 		let blob = ["%FOO%", "aap", "noot", "mies"].join("\n");
-		assert_eq!(parse_dict(blob.as_ref()), Ok(btreemap!{"FOO" => vec!["aap", "noot", "mies"]}));
+		assert!(parse_dict(blob.as_ref()) == Ok(btreemap!{"FOO" => vec!["aap", "noot", "mies"]}));
 	}
 
 	#[test]
 	fn lines_are_trimmed() {
 		let blob = ["  %FOO%  ", "    aap  ", "   noot", "mies  "].join("\n");
-		assert_eq!(parse_dict(blob.as_ref()), Ok(btreemap!{"FOO" => vec!["aap", "noot", "mies"]}));
+		assert!(parse_dict(blob.as_ref()) == Ok(btreemap!{"FOO" => vec!["aap", "noot", "mies"]}));
 	}
 
 	#[test]
 	fn empty_lines_are_ignored() {
 		let blob = ["", "", "", "%FOO%", "", "", "", "aap", "", "noot", "mies", "", ""].join("\n");
-		assert_eq!(parse_dict(blob.as_ref()), Ok(btreemap!{"FOO" => vec!["aap", "noot", "mies"]}));
+		assert!(parse_dict(blob.as_ref()) == Ok(btreemap!{"FOO" => vec!["aap", "noot", "mies"]}));
 	}
 
 	#[test]
@@ -90,7 +91,7 @@ mod tests {
 			"%FOO%", "aap", "noot", "mies",
 			"%BAR%", "wim", "zus", "jet",
 		].join("\n");
-		assert_eq!(parse_dict(blob.as_ref()), Ok(btreemap!{
+		assert!(parse_dict(blob.as_ref()) == Ok(btreemap!{
 			"FOO" => vec!["aap", "noot", "mies"],
 			"BAR" => vec!["wim", "zus", "jet"]
 		}));
@@ -105,7 +106,7 @@ mod tests {
 			"%BAR%", "zus",
 			"%BAR%", "jet",
 		].join("\n");
-		assert_eq!(parse_dict(blob.as_ref()), Ok(btreemap!{
+		assert!(parse_dict(blob.as_ref()) == Ok(btreemap!{
 			"FOO" => vec!["aap", "noot", "mies"],
 			"BAR" => vec!["wim", "zus", "jet"]
 		}));

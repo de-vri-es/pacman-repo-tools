@@ -116,8 +116,9 @@ impl std::fmt::Display for VersionBuf {
 }
 
 #[cfg(test)]
-mod tests {
+mod test {
 	use super::*;
+	use assert2::assert;
 
 	#[test]
 	fn test_compare_version() {

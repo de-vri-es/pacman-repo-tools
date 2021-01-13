@@ -60,12 +60,14 @@ pub fn compare_package_version(a: &str, b: &str) -> Ordering {
 }
 
 #[cfg(test)]
-mod tests {
+mod test {
 	use super::*;
+	use assert2::assert;
 
+	#[track_caller]
 	fn assert_compare_version_string(a: &str, b: &str, ordering: Ordering) {
-		assert_eq!(compare_version_string(a, b), ordering, "comparing {:?} to {:?}", a, b);
-		assert_eq!(compare_version_string(b, a), ordering.reverse(), "comparing {:?} to {:?}", a, b);
+		assert!(compare_version_string(a, b) == ordering);
+		assert!(compare_version_string(b, a) == ordering.reverse());
 	}
 
 	#[test]
@@ -113,9 +115,10 @@ mod tests {
 		assert_compare_version_string("1.."  , "1..1"  , Ordering::Less);
 	}
 
+	#[track_caller]
 	fn assert_compare_package_version(a: &str, b: &str, ordering: Ordering) {
-		assert_eq!(compare_package_version(a, b), ordering, "comparing {:?} to {:?}", a, b);
-		assert_eq!(compare_package_version(b, a), ordering.reverse(), "comparing {:?} to {:?}", b, a);
+		assert!(compare_package_version(a, b) == ordering);
+		assert!(compare_package_version(b, a) == ordering.reverse());
 	}
 
 	#[test]

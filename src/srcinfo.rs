@@ -255,21 +255,26 @@ pub fn parse_srcinfo_dir<'a, P>(tracker: &'a SourceTracker, directory: &P) -> Db
 }
 
 #[cfg(test)]
-mod tests {
+mod test {
 	use super::*;
+	use assert2::assert;
+
+	fn iterate_info_vec(blob: &str) -> ParseResult<Vec<(&str, &str)>> {
+		iterate_info(blob).collect()
+	}
 
 	#[test]
 	fn test_simple() {
 		let blob = ["a=b", "c=d"].join("\n");
-		assert_seq!(iterate_info(&blob), [
-			Ok(("a", "b")),
-			Ok(("c", "d")),
-		])
+		assert!(iterate_info_vec(&blob) == Ok(vec![
+			("a", "b"),
+			("c", "d"),
+		]))
 	}
 
 	#[test]
 	fn spaces_are_stripped() {
-		assert_seq!(iterate_info(" a   =    b  "), [Ok(("a", "b"))])
+		assert!(iterate_info_vec(" a   =    b  ") == Ok(vec![("a", "b")]))
 	}
 
 	#[test]
