@@ -95,13 +95,21 @@ mod test {
 	use super::*;
 	use assert2::assert;
 
+	fn version(epoch: i32, pkgver: &str) -> Version {
+		Version {
+			epoch,
+			pkgver: pkgver.into(),
+			pkgrel: None,
+		}
+	}
+
 	#[test]
 	fn test_parse_provides() {
 		assert!(parse_provides("aap") == ("aap", None));
-		assert!(parse_provides("aap=1") == ("aap", Some(Version::new(0, "1", None).into())));
-		assert!(parse_provides("aap=1=2") == ("aap", Some(Version::new(0, "1=2", None).into())));
-		assert!(parse_provides("aap=") == ("aap", Some(Version::new(0, "", None).into())));
-		assert!(parse_provides("=1") == ("", Some(Version::new(0, "1", None).into())));
+		assert!(parse_provides("aap=1") == ("aap", Some(version(0, "1").into())));
+		assert!(parse_provides("aap=1=2") == ("aap", Some(version(0, "1=2").into())));
+		assert!(parse_provides("aap=") == ("aap", Some(version(0, "").into())));
+		assert!(parse_provides("=1") == ("", Some(version(0, "1").into())));
 	}
 
 	fn some_constraint(version: Version, constraint: Constraint) -> Option<VersionConstraint> {
@@ -114,21 +122,21 @@ mod test {
 		assert!(parse_depends("aap") == ("aap", None));
 
 		// Simple constraints.
-		assert!(parse_depends("aap=1") == ("aap", some_constraint(Version::from("1").into(), Constraint::Equal)));
-		assert!(parse_depends("aap==2") == ("aap", some_constraint(Version::from("2").into(), Constraint::Equal))); // not official
-		assert!(parse_depends("aap>=3") == ("aap", some_constraint(Version::from("3").into(), Constraint::GreaterEqual)));
-		assert!(parse_depends("aap<=4") == ("aap", some_constraint(Version::from("4").into(), Constraint::LessEqual)));
-		assert!(parse_depends("aap>5") == ("aap", some_constraint(Version::from("5").into(), Constraint::Greater)));
-		assert!(parse_depends("aap<6") == ("aap", some_constraint(Version::from("6").into(), Constraint::Less)));
+		assert!(parse_depends("aap=1") == ("aap", some_constraint(version(0, "1"), Constraint::Equal)));
+		assert!(parse_depends("aap==2") == ("aap", some_constraint(version(0, "2"), Constraint::Equal))); // not official
+		assert!(parse_depends("aap>=3") == ("aap", some_constraint(version(0, "3"), Constraint::GreaterEqual)));
+		assert!(parse_depends("aap<=4") == ("aap", some_constraint(version(0, "4"), Constraint::LessEqual)));
+		assert!(parse_depends("aap>5") == ("aap", some_constraint(version(0, "5"), Constraint::Greater)));
+		assert!(parse_depends("aap<6") == ("aap", some_constraint(version(0, "6"), Constraint::Less)));
 
 		// Strange cases.
-		assert!(parse_depends("aap=1=2") == ("aap", some_constraint(Version::from("1=2").into(), Constraint::Equal)));
-		assert!(parse_depends("aap=") == ("aap", some_constraint(Version::from("").into(), Constraint::Equal)));
-		assert!(parse_depends("=1") == ("", some_constraint(Version::from("1").into(), Constraint::Equal)));
+		assert!(parse_depends("aap=1=2") == ("aap", some_constraint(Version::from_str("1=2").into(), Constraint::Equal)));
+		assert!(parse_depends("aap=") == ("aap", some_constraint(Version::from_str("").into(), Constraint::Equal)));
+		assert!(parse_depends("=1") == ("", some_constraint(Version::from_str("1").into(), Constraint::Equal)));
 
 		// More complicated version.
-		assert!(parse_depends("aap=1.2-3") == ("aap", some_constraint(Version::new(0, "1.2", Some("3")).into(), Constraint::Equal)));
-		assert!(parse_depends("aap=:1.2-3") == ("aap", some_constraint(Version::new(0, "1.2", Some("3")).into(), Constraint::Equal)));
-		assert!(parse_depends("aap=5:1.2-3") == ("aap", some_constraint(Version::new(5, "1.2", Some("3")).into(), Constraint::Equal)));
+		assert!(parse_depends("aap=1.2-3") == ("aap", some_constraint(Version::new(0, "1.2".into(), Some("3".into())), Constraint::Equal)));
+		assert!(parse_depends("aap=:1.2-3") == ("aap", some_constraint(Version::new(0, "1.2".into(), Some("3".into())), Constraint::Equal)));
+		assert!(parse_depends("aap=5:1.2-3") == ("aap", some_constraint(Version::new(5, "1.2".into(), Some("3".into())), Constraint::Equal)));
 	}
 }
