@@ -62,7 +62,7 @@ pub fn compare_version_string(a: &str, b: &str) -> Ordering {
 }
 
 pub fn compare_package_version(a: &str, b: &str) -> Ordering {
-	Version::from_str(a).cmp(&b.into())
+	Version::from_str(a).cmp(&Version::from_str(b))
 }
 
 #[cfg(test)]

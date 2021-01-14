@@ -27,7 +27,5 @@ mod macros;
 pub mod alpm;
 pub mod error;
 pub mod package;
-pub mod srcinfo;
+pub mod parse;
 pub mod version;
-
-mod parse;

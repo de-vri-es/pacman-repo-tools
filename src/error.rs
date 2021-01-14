@@ -1,5 +1,4 @@
-use std;
-
+/// An error that can occur while parsing.
 #[derive(Clone, Debug, Eq, PartialEq, Ord, PartialOrd)]
 pub struct ParseError<'a> {
 	pub message: String,

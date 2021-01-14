@@ -22,7 +22,6 @@
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 use std::collections::BTreeMap;
-
 use crate::error::ParseError;
 
 fn parse_key(line: &str) -> Option<&str> {
@@ -63,6 +62,24 @@ pub fn parse_dict(blob: &str) -> Result<BTreeMap<&str, Vec<&str>>, ParseError> {
 
 	Ok(result)
 }
+
+// fn parse_extracted_db<'a>(tracker: &SourceTracker<'a>, directory: impl AsRef<Path>) -> Result<BTreeMap<&'a str, Package<'a>>, ReadDbError> {
+// 	let directory = directory.as_ref();
+// 	let dir = std::fs::read_dir(directory)
+// 		.map_err(|e| ReadDbError::ReadDir(directory.into(), e))?;
+
+// 	for entry in dir {
+// 		let entry = entry.map_err(|e| ReadDbError::ReadDir(directory.into(), e))?;
+// 		let path = entry.path();
+// 		if !path.is_dir() {
+// 			continue;
+// 		}
+// 		let stat = entry.metadata().map_err(op)
+// 	}
+
+// 	let dir = walkdir::WalkDir::new(directory).
+// 	todo!();
+// }
 
 #[cfg(test)]
 mod test {

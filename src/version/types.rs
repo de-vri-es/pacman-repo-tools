@@ -5,23 +5,15 @@ use super::parse::consume_pkgrel;
 use std;
 
 /// A view into a string, split into version parts.
-#[derive(Copy, Clone, Debug)]
-pub struct Version<'a> {
-	pub epoch: i32,
-	pub pkgver: &'a str,
-	pub pkgrel: Option<&'a str>,
-}
-
-/// A package version with epoch, pkgver and pkgrel.
 #[derive(Clone, Debug)]
-pub struct VersionBuf {
+pub struct Version {
 	pub epoch: i32,
 	pub pkgver: String,
 	pub pkgrel: Option<String>,
 }
 
-impl<'a> Version<'a> {
-	pub fn new(epoch: i32, pkgver: &'a str, pkgrel: Option<&'a str>) -> Version<'a> {
+impl Version {
+	pub fn new(epoch: i32, pkgver: String, pkgrel: Option<String>) -> Version {
 		Version { epoch, pkgver, pkgrel }
 	}
 
@@ -34,86 +26,35 @@ impl<'a> Version<'a> {
 	}
 }
 
-impl<'a> From<&'a str> for Version<'a> {
-	fn from(blob: &'a str) -> Self {
-		Self::from_str(blob)
-	}
-}
-
-impl VersionBuf {
-	pub fn new(epoch: i32, pkgver: String, pkgrel: Option<String>) -> VersionBuf {
-		VersionBuf { epoch, pkgver, pkgrel }
-	}
-
-	pub fn from_string(s: String) -> VersionBuf {
-		Version::from_str(&s).into()
-	}
-}
-
-impl<'a> From<String> for VersionBuf {
-	fn from(blob: String) -> Self {
-		Self::from_string(blob)
-	}
-}
-
-impl_ord_requisites!('a; Version<'a>);
-impl<'a> Ord for Version<'a> {
+impl_ord_requisites!(Version);
+impl<'a> Ord for Version {
 	fn cmp(&self, other: &Version) -> std::cmp::Ordering {
 		match self.epoch.cmp(&other.epoch) {
 			std::cmp::Ordering::Equal => (),
 			x => return x,
 		}
-		match compare_version_string(self.pkgver, other.pkgver) {
+		match compare_version_string(&self.pkgver, &other.pkgver) {
 			std::cmp::Ordering::Equal => (),
 			x => return x,
 		}
-		match (self.pkgrel, other.pkgrel) {
+		match (&self.pkgrel, &other.pkgrel) {
 			(None, None) => std::cmp::Ordering::Equal,
 			(None, Some(_)) => std::cmp::Ordering::Less,
 			(Some(_), None) => std::cmp::Ordering::Greater,
-			(Some(a), Some(b)) => compare_version_string(a, b),
+			(Some(a), Some(b)) => compare_version_string(&a, &b),
 		}
-	}
-}
-
-impl_ord_requisites!(VersionBuf);
-impl Ord for VersionBuf {
-	fn cmp(&self, other: &VersionBuf) -> std::cmp::Ordering {
-		let as_ref: Version = self.into();
-		as_ref.cmp(&other.into())
-	}
-}
-
-// Conversion from Version to VersionBuf
-impl<'a> From<Version<'a>> for VersionBuf {
-	fn from(version: Version<'a>) -> VersionBuf {
-		VersionBuf::new(version.epoch, version.pkgver.to_string(), version.pkgrel.as_ref().map(|x| x.to_string()))
-	}
-}
-
-// Conversion from &VersionBuf to Version.
-impl<'a> From<&'a VersionBuf> for Version<'a> {
-	fn from(version: &'a VersionBuf) -> Version<'a> {
-		Version::new(version.epoch, version.pkgver.as_ref(), version.pkgrel.as_ref().map(|x| x.as_ref()))
 	}
 }
 
 // Display for Version.
-impl<'a> std::fmt::Display for Version<'a> {
+impl std::fmt::Display for Version {
 	fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-		match (self.epoch, self.pkgrel) {
-			(0, None) => f.write_str(self.pkgver),
+		match (self.epoch, &self.pkgrel) {
+			(0, None) => f.write_str(&self.pkgver),
 			(0, Some(pkgrel)) => f.write_fmt(format_args!("{}-{}", self.pkgver, pkgrel)),
 			(epoch, None) => f.write_fmt(format_args!("{}:{}", epoch, self.pkgver)),
 			(epoch, Some(pkgrel)) => f.write_fmt(format_args!("{}:{}-{}", epoch, self.pkgver, pkgrel)),
 		}
-	}
-}
-
-// Display for VersionBuf.
-impl std::fmt::Display for VersionBuf {
-	fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-		Version::from(self).fmt(f)
 	}
 }
 
@@ -122,17 +63,18 @@ mod test {
 	use super::*;
 	use assert2::assert;
 
-	#[test]
-	fn test_compare_version() {
-		assert!(Version::new(0, "1", Some("2")) < Version::new(0, "1", Some("3")));
-		assert!(Version::new(0, "1", Some("2")) < Version::new(0, "2", Some("1")));
-		assert!(Version::new(0, "1", Some("2")) < Version::new(1, "0", Some("1")));
+	fn version(epoch: i32, pkgver: &str, pkgrel: &str) -> Version {
+		Version {
+			epoch,
+			pkgver: pkgver.into(),
+			pkgrel: Some(pkgrel.into()),
+		}
 	}
 
 	#[test]
-	fn test_compare_version_buf() {
-		assert!(VersionBuf::new(0, "1".to_string(), Some("2".to_string())) < VersionBuf::new(0, "1".to_string(), Some("3".to_string())));
-		assert!(VersionBuf::new(0, "1".to_string(), Some("2".to_string())) < VersionBuf::new(0, "2".to_string(), Some("1".to_string())));
-		assert!(VersionBuf::new(0, "1".to_string(), Some("2".to_string())) < VersionBuf::new(1, "0".to_string(), Some("1".to_string())));
+	fn test_compare_version() {
+		assert!(version(0, "1", "2") < version(0, "1", "3"));
+		assert!(version(0, "1", "2") < version(0, "2", "1"));
+		assert!(version(0, "1", "2") < version(1, "0", "1"));
 	}
 }
