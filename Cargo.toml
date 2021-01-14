@@ -8,12 +8,10 @@ authors     = ["Maarten de Vries <maarten@de-vri.es>"]
 edition     = "2018"
 
 [dependencies]
-walkdir = "2.3.1"
-slice-tracker = {git = "https://github.com/de-vri-es/slice-tracker-rs"}
-structopt = "0.3.21"
 reqwest = "0.11.0"
+serde = { version = "1.0.119", features = ["derive"] }
+structopt = "0.3.21"
 tokio = { version = "1.0.1", features = ["rt", "process", "io-util"] }
 
 [dev-dependencies]
 assert2 = "0.3.3"
-maplit = "1.0.2"
