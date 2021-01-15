@@ -22,9 +22,12 @@
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 mod compare;
-mod parse;
 mod types;
 
-pub use self::types::Version;
-pub use self::compare::compare_package_version;
+pub use self::types::{
+	PackageVersion,
+	PackageVersionFromStrError,
+	Version,
+	VersionFromStrError,
+};
 pub use self::compare::compare_version_string;

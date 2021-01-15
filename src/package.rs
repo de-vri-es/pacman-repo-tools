@@ -1,54 +1,16 @@
-// Copyright (c) 2017, Maarten de Vries
-//
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are met:
-//
-// * Redistributions of source code must retain the above copyright notice, this
-//   list of conditions and the following disclaimer.
-//
-// * Redistributions in binary form must reproduce the above copyright notice,
-//   this list of conditions and the following disclaimer in the documentation
-//   and/or other materials provided with the distribution.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
-// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
-// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
-// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
-// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
-// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
-// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
-// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
-// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+use crate::version::{Version, VersionFromStrError};
+use crate::parse::partition;
 
-use std::collections::BTreeMap;
-
-use crate::version::Version;
-
-type DependencyMap = BTreeMap<String, Option<VersionConstraint>>;
-type ProvidesMap = BTreeMap<String, Option<Version>>;
-
-/// Metadata about a pacman package.
 #[derive(Clone, Debug, Eq, PartialEq)]
-pub struct Package {
-	pub pkgname: String,
-	pub version: Version,
+pub struct Provides {
+	pub name: String,
+	pub version: Option<Version>,
+}
 
-	pub url: Option<String>,
-	pub description: Option<String>,
-	pub licenses: Vec<String>,
-
-	pub groups: Vec<String>,
-	pub backup: Vec<String>,
-
-	pub provides: ProvidesMap,
-	pub conflicts: DependencyMap,
-	pub replaces: DependencyMap,
-
-	pub depends: DependencyMap,
-	pub opt_depends: DependencyMap,
-	pub make_depends: DependencyMap,
-	pub check_depends: DependencyMap,
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct Dependency {
+	pub name: String,
+	pub version: Option<VersionConstraint>,
 }
 
 /// A version constraint operator.
@@ -66,4 +28,181 @@ pub enum Constraint {
 pub struct VersionConstraint {
 	pub version: Version,
 	pub constraint: Constraint,
+}
+
+impl Provides {
+	pub fn unversioned(name: impl Into<String>) -> Self {
+		let name = name.into();
+		Self { name, version: None }
+	}
+
+	pub fn versioned(name: impl Into<String>, version: Version) -> Self {
+		let name = name.into();
+		let version = Some(version);
+		Self { name, version }
+	}
+}
+
+impl Dependency {
+	pub fn unconstrained(name: impl Into<String>) -> Self {
+		let name = name.into();
+		Self { name, version: None }
+	}
+
+	pub fn constrained(name: impl Into<String>, version: VersionConstraint) -> Self {
+		let name = name.into();
+		let version = Some(version);
+		Self { name, version }
+	}
+
+	pub fn constrained_equal(name: impl Into<String>, version: Version) -> Self {
+		let name = name.into();
+		let version = Some(VersionConstraint {
+			version,
+			constraint: Constraint::Equal,
+		});
+		Self { name, version }
+	}
+
+	pub fn constrained_less(name: impl Into<String>, version: Version) -> Self {
+		let name = name.into();
+		let version = Some(VersionConstraint {
+			version,
+			constraint: Constraint::Less,
+		});
+		Self { name, version }
+	}
+
+	pub fn constrained_less_equal(name: impl Into<String>, version: Version) -> Self {
+		let name = name.into();
+		let version = Some(VersionConstraint {
+			version,
+			constraint: Constraint::LessEqual,
+		});
+		Self { name, version }
+	}
+
+	pub fn constrained_greater(name: impl Into<String>, version: Version) -> Self {
+		let name = name.into();
+		let version = Some(VersionConstraint {
+			version,
+			constraint: Constraint::Greater,
+		});
+		Self { name, version }
+	}
+
+	pub fn constrained_greater_equal(name: impl Into<String>, version: Version) -> Self {
+		let name = name.into();
+		let version = Some(VersionConstraint {
+			version,
+			constraint: Constraint::GreaterEqual,
+		});
+		Self { name, version }
+	}
+}
+
+impl std::str::FromStr for Provides {
+	// TODO: also check for invalid package names
+	type Err = VersionFromStrError;
+
+	fn from_str(input: &str) -> Result<Self, Self::Err> {
+		if let Some((name, version)) = partition(input, '=') {
+			Ok(Provides {
+				name: name.into(),
+				version: Some(version.parse()?),
+			})
+		} else {
+			Ok(Provides {
+				name: input.into(),
+				version: None,
+			})
+		}
+	}
+}
+
+impl std::str::FromStr for Dependency {
+	// TODO: also check for invalid package names and version constraints.
+	type Err = VersionFromStrError;
+
+	fn from_str(input: &str) -> Result<Self, Self::Err> {
+		if let Some(start) = input.find(is_constraint_char) {
+			let name = &input[..start];
+			let (constraint, version) = parse_constraint(&input[start..]).unwrap();
+			Ok(Dependency {
+				name: name.into(),
+				version: Some(VersionConstraint {
+					version: version.parse()?,
+					constraint,
+				})
+			})
+		} else {
+			Ok(Dependency {
+				name: input.into(),
+				version: None,
+			})
+		}
+	}
+}
+
+/// Check if a character is part of a version constraint operator.
+fn is_constraint_char(c: char) -> bool {
+	c == '>' || c == '<' || c == '='
+}
+
+/// Parse a version constraint.
+fn parse_constraint(contraint: &str) -> Option<(Constraint, &str)> {
+	if let Some(version) = contraint.strip_prefix(">=") {
+		Some((Constraint::GreaterEqual, version))
+	} else if let Some(version) = contraint.strip_prefix("<=") {
+		Some((Constraint::LessEqual, version))
+	} else if let Some(version) = contraint.strip_prefix(">") {
+		Some((Constraint::Greater, version))
+	} else if let Some(version) = contraint.strip_prefix("<") {
+		Some((Constraint::Less, version))
+	} else if let Some(version) = contraint.strip_prefix("==") {
+		// Shame on you, packagers.
+		Some((Constraint::Equal, version))
+	} else if let Some(version) = contraint.strip_prefix("=") {
+		Some((Constraint::Equal, version))
+	} else {
+		None
+	}
+}
+
+impl<'de> serde::Deserialize<'de> for Provides {
+	fn deserialize<D: serde::de::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+		struct Visitor;
+		impl<'de> serde::de::Visitor<'de> for Visitor {
+			type Value = Provides;
+
+			fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+				write!(f, "a provided package name with optional version")
+			}
+
+			fn visit_str<E: serde::de::Error>(self, value: &str) -> Result<Self::Value, E> {
+				value.parse().map_err(|e| E::custom(format_args!("invalid version in provides declaration: {}", e)))
+			}
+		}
+
+		deserializer.deserialize_str(Visitor)
+	}
+}
+
+impl<'de> serde::Deserialize<'de> for Dependency {
+	fn deserialize<D: serde::de::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+		struct Visitor;
+		impl<'de> serde::de::Visitor<'de> for Visitor {
+			type Value = Dependency;
+
+			fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+				write!(f, "a dependency name with optional version constraint")
+			}
+
+			fn visit_str<E: serde::de::Error>(self, value: &str) -> Result<Self::Value, E> {
+				value.parse().map_err(|e| E::custom(format_args!("invalid version in dependency declaration: {}", e)))
+			}
+		}
+
+		deserializer.deserialize_str(Visitor)
+	}
 }

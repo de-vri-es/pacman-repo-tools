@@ -1,42 +1,13 @@
-// Copyright (c) 2017, Maarten de Vries
-//
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are met:
-//
-// * Redistributions of source code must retain the above copyright notice, this
-//   list of conditions and the following disclaimer.
-//
-// * Redistributions in binary form must reproduce the above copyright notice,
-//   this list of conditions and the following disclaimer in the documentation
-//   and/or other materials provided with the distribution.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
-// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
-// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
-// DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
-// FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
-// DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
-// SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
-// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
-// OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-
 use std::io::{Read, BufRead, BufReader};
 use std::path::Path;
 use serde::de;
 use serde::de::Error as _;
-
-struct Source {
-	reader: Box<dyn Read>,
-	source: Option<String>,
-}
 
 pub struct Deserializer<'a> {
 	reader: BufReader<Box<dyn Read + 'a>>,
 	source: Option<String>,
 	line: u32,
 	peek_buffer: Option<String>,
-	next_sources: Vec<Source>,
 }
 
 impl<'a> Deserializer<'a> {
@@ -46,7 +17,6 @@ impl<'a> Deserializer<'a> {
 			source,
 			line: 0,
 			peek_buffer: None,
-			next_sources: Vec::new(),
 		}
 	}
 
@@ -64,25 +34,26 @@ impl<'a> Deserializer<'a> {
 		let source = path.display().to_string();
 		Ok(Self::new(file, Some(source)))
 	}
-
-	pub fn add_source<T: Read + 'static>(&mut self, reader: T, source: Option<String>) {
-		self.next_sources.push(Source {
-			reader: Box::new(reader),
-			source,
-		})
-	}
-
-	pub fn add_file(&mut self, path: impl AsRef<Path>) -> std::io::Result<()> {
-		let path = path.as_ref();
-		let file = std::fs::File::open(path)?;
-		let source = path.display().to_string();
-		self.add_source(file, Some(source));
-		Ok(())
-	}
 }
 
 pub fn from_str<'a, T: serde::de::DeserializeOwned>(data: &'a str) -> Result<T, Error> {
 	let mut deserializer = Deserializer::from_str(data, None);
+	T::deserialize(&mut deserializer)
+}
+
+pub fn from_bytes<'a, T: serde::de::DeserializeOwned>(data: &'a [u8]) -> Result<T, Error> {
+	let mut deserializer = Deserializer::from_bytes(data, None);
+	T::deserialize(&mut deserializer)
+}
+
+pub fn from_file<'a, T: serde::de::DeserializeOwned>(path: impl AsRef<Path>) -> Result<T, Error> {
+	let path = path.as_ref();
+	let mut deserializer = Deserializer::from_file(path)
+		.map_err(|e| Error {
+			source: Some(path.display().to_string()),
+			line: None,
+			message: format!("failed to open file for reading: {}", e),
+		})?;
 	T::deserialize(&mut deserializer)
 }
 
@@ -91,12 +62,6 @@ pub struct Error {
 	source: Option<String>,
 	line: Option<u32>,
 	message: String,
-}
-
-#[derive(Debug)]
-struct Location {
-	source: String,
-	line: u32,
 }
 
 impl Deserializer<'_> {
@@ -147,7 +112,9 @@ impl Deserializer<'_> {
 			let size = self.reader.read_line(&mut line).map_err(|e| self.read_error(e))?;
 
 			// If we got one, strip line endings and return it.
-			if size > 0 {
+			if size == 0 {
+				return Ok(None)
+			} else {
 				if line.ends_with('\n') {
 					line.pop();
 				}
@@ -160,18 +127,6 @@ impl Deserializer<'_> {
 				}
 				eprintln!("reading new line: {}", line);
 				return Ok(Some(line));
-			}
-
-			// If the current source is empty try to switch to the next.
-			// If there is no next source, report None.
-			if self.next_sources.is_empty() {
-				eprintln!("reading line: end of input reached");
-				return Ok(None)
-			} else {
-				let next_source = self.next_sources.remove(0);
-				self.reader = BufReader::new(next_source.reader);
-				self.source = next_source.source.clone();
-				self.line = 0;
 			}
 		}
 	}

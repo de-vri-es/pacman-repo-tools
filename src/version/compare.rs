@@ -1,7 +1,5 @@
 use std::cmp::Ordering;
 
-use super::Version;
-
 fn consume_while<'a, F>(input: &mut &'a str, mut condition: F) -> &'a str
 where
 	F: FnMut(char) -> bool,
@@ -61,10 +59,6 @@ pub fn compare_version_string(a: &str, b: &str) -> Ordering {
 	Ordering::Equal
 }
 
-pub fn compare_package_version(a: &str, b: &str) -> Ordering {
-	Version::from_str(a).cmp(&Version::from_str(b))
-}
-
 #[cfg(test)]
 mod test {
 	use super::*;
@@ -119,39 +113,5 @@ mod test {
 		assert_compare_version_string("1..a", "1..", Ordering::Less);
 		// Empty components are less than numeric components.
 		assert_compare_version_string("1..", "1..1", Ordering::Less);
-	}
-
-	#[track_caller]
-	fn assert_compare_package_version(a: &str, b: &str, ordering: Ordering) {
-		assert!(compare_package_version(a, b) == ordering);
-		assert!(compare_package_version(b, a) == ordering.reverse());
-	}
-
-	#[test]
-	fn test_compare_package_version() {
-		// Test simple cases.
-		assert_compare_package_version("", "", Ordering::Equal);
-		assert_compare_package_version("1", "0", Ordering::Greater);
-		assert_compare_package_version("0", "1", Ordering::Less);
-
-		// Test that pkgrel decides if pkgver is equal.
-		assert_compare_package_version("0-1", "0", Ordering::Greater);
-		assert_compare_package_version("0-1", "0-0", Ordering::Greater);
-		assert_compare_package_version("1-0", "0-1", Ordering::Greater);
-
-		// Test that epoch is implicitly 0.
-		assert_compare_package_version("0:", "", Ordering::Equal);
-		assert_compare_package_version("0:1", "0", Ordering::Greater);
-		assert_compare_package_version("0:0", "1", Ordering::Less);
-
-		// Test that epoch trumps pkgver.
-		assert_compare_package_version("1:1", "0", Ordering::Greater);
-		assert_compare_package_version("1:0", "0", Ordering::Greater);
-		assert_compare_package_version("1:0", "1", Ordering::Greater);
-
-		// Test that epoch trumps pkgrel.
-		assert_compare_package_version("0-1", "1:0", Ordering::Less);
-		assert_compare_package_version("0-1", "1:0-0", Ordering::Less);
-		assert_compare_package_version("1-0", "1:0-1", Ordering::Less);
 	}
 }
