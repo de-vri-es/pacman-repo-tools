@@ -39,6 +39,7 @@ pub struct DatabasePackageDesc {
 	pub pgpsig: Option<String>,
 	pub url: Option<String>,
 	#[serde(rename = "LICENSE")]
+	#[serde(default)]
 	pub licenses: Vec<String>,
 	pub arch: String,
 	#[serde(rename = "BUILDDATE")]
