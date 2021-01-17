@@ -36,18 +36,18 @@ pub enum PackageVersionFromStrError {
 	MissingPkgRel,
 }
 
-impl PackageVersion {
-	/// Create a new version with epoch, pkgver and pkgrel.
-	pub fn new(epoch: i32, pkgver: impl Into<String>, pkgrel: impl Into<String>) -> Self {
+impl Version {
+	/// Create a new version with epoch, pkgver and optional pkgrel.
+	pub fn new(epoch: i32, pkgver: impl Into<String>, pkgrel: Option<String>) -> Self {
 		let pkgver = pkgver.into();
 		let pkgrel = pkgrel.into();
 		Self { epoch, pkgver, pkgrel }
 	}
 }
 
-impl Version {
-	/// Create a new version with epoch, pkgver and optional pkgrel.
-	pub fn new(epoch: i32, pkgver: impl Into<String>, pkgrel: Option<String>) -> Self {
+impl PackageVersion {
+	/// Create a new version with epoch, pkgver and pkgrel.
+	pub fn new(epoch: i32, pkgver: impl Into<String>, pkgrel: impl Into<String>) -> Self {
 		let pkgver = pkgver.into();
 		let pkgrel = pkgrel.into();
 		Self { epoch, pkgver, pkgrel }
@@ -267,18 +267,19 @@ mod test {
 		assert!(PackageVersion::new(0, "1", "2") < PackageVersion::new(1, "0", "1"));
 	}
 
+	#[test]
 	fn test_parse() {
 		let parse = |x: &str| -> Result<PackageVersion, _> {
 			x.parse()
 		};
 
 		assert!(parse("1.2.3-4") == Ok(PackageVersion::new(0, "1.2.3", "4")));
-		assert!(parse("1.2.3-4.5") == Ok(PackageVersion::new(5, "1.2.3", "4.5")));
+		assert!(parse("1.2.3-4.5") == Ok(PackageVersion::new(0, "1.2.3", "4.5")));
 		assert!(parse("5:1.2.3-4") == Ok(PackageVersion::new(5, "1.2.3", "4")));
 
 		assert!(parse("aap:1.2.3-4") == Err(PackageVersionFromStrError::InvalidEpoch));
 		assert!(parse("aap-noot-1") == Err(PackageVersionFromStrError::InvalidPkgver));
-		assert!(parse("1.2.3-foo") == Err(PackageVersionFromStrError::InvalidPkgver));
+		assert!(parse("1.2.3-foo") == Err(PackageVersionFromStrError::InvalidPkgrel));
 		assert!(parse("1.2.3") == Err(PackageVersionFromStrError::MissingPkgRel));
 	}
 }
