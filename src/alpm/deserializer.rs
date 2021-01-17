@@ -137,39 +137,19 @@ impl Deserializer<'_> {
 		self.read_line()?.ok_or_else(|| self.error("unexpected end of file"))
 	}
 
-	/// Like [`Self::read_expected_line`], but also return an error if the read line is empty.
-	fn read_non_empty_line(&mut self) -> Result<String, Error> {
-		eprintln!("read_non_empty_line()");
-		let line = self.read_expected_line()?;
-		if line.is_empty() {
-			Err(self.error("expected value, got empty line"))
-		} else {
-			Ok(line)
-		}
-	}
-
-	/// Try to read a line and return an error if it is not empty.
-	///
-	/// This is useful to check that values are terminated by an empty line or EOF.
-	fn read_empty_line_or_eof(&mut self) -> Result<(), Error> {
-		eprintln!("read_empty_line_or_eof()");
-		match self.read_line()? {
-			None => Ok(()),
-			Some(x) => if x.is_empty() {
-				Ok(())
-			} else {
-				Err(self.error("expected empty line or EOF"))
-			},
-		}
-	}
-
+	/// Read a line and parse a [`std::str::FromStr`] value from it.
 	fn read_value<T: std::str::FromStr>(&mut self, type_name: &str) -> Result<T, Error> {
 		eprintln!("read_single_value()");
-		let line = self.read_non_empty_line()?;
+		let line = self.read_expected_line()?;
 		let value = line.parse().map_err(|_| self.error(format_args!("invalid value, expected {}", type_name)))?;
 		Ok(value)
 	}
 
+	/// Read a line and parse a key from it.
+	///
+	/// A line with a key has the format '%KEY%`.
+	/// If the read line does not match the format,
+	/// an error is returned.
 	fn read_key(&mut self) -> Result<Option<String>, Error> {
 		eprintln!("read_key()");
 		let mut line = match self.read_line()? {
@@ -410,7 +390,7 @@ impl<'de> de::Deserializer<'de> for FieldDeserializer<'_, '_> {
 	}
 
 	fn deserialize_char<V: de::Visitor<'de>>(self, visitor: V) -> Result<V::Value, Self::Error> {
-		let line = self.parent.read_non_empty_line()?;
+		let line = self.parent.read_expected_line()?;
 		let mut chars = line.chars();
 		let value = chars.next().unwrap();
 

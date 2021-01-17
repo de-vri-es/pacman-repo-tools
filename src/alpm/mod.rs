@@ -5,6 +5,8 @@ use crate::package::{Dependency, Provides};
 
 mod deserializer;
 
+pub use deserializer::{from_bytes, from_str, from_file};
+
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "UPPERCASE")]
 #[serde(deny_unknown_fields)]
@@ -65,7 +67,7 @@ mod test {
 
 	#[test]
 	fn test_parse_package_desc() {
-		let_assert!(Ok(parsed) = deserializer::from_bytes::<DatabasePackageDesc>(PACKAGE_DESC));
+		let_assert!(Ok(parsed) = from_bytes::<DatabasePackageDesc>(PACKAGE_DESC));
 		assert!(parsed.filename == "linux-aarch64-5.8.9-2-aarch64.pkg.tar.xz");
 		assert!(parsed.name == "linux-aarch64");
 		assert!(parsed.base.as_deref() == Some("linux-aarch64"));
@@ -88,7 +90,7 @@ mod test {
 
 	#[test]
 	fn test_parse_package_depends() {
-		let_assert!(Ok(parsed) = deserializer::from_bytes::<DatabasePackageDepends>(PACKAGE_DEPENDS));
+		let_assert!(Ok(parsed) = from_bytes::<DatabasePackageDepends>(PACKAGE_DEPENDS));
 		assert!(parsed.depends == vec![
 			Dependency::unconstrained("coreutils"),
 			Dependency::unconstrained("linux-firmware"),
