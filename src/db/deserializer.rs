@@ -174,7 +174,7 @@ impl<R: BufRead> Deserializer<R> {
 }
 
 fn unexpected_top_level_type(name: &str) -> Error {
-	Error::custom(format_args!("the top level type must be a struct for the ALPM format, but it is {}", name))
+	Error::custom(format_args!("the top level type must be a struct for the ALPM database format, but it is {}", name))
 }
 
 impl<'de, R: BufRead> de::Deserializer<'de> for &'_ mut Deserializer<R> {
@@ -257,7 +257,7 @@ impl<'de, R: BufRead> de::Deserializer<'de> for &'_ mut Deserializer<R> {
 	}
 
 	fn deserialize_newtype_struct<V: de::Visitor<'de>>(self, _name: &str, visitor: V) -> Result<V::Value, Self::Error> {
-		// ALPM files don't do newtype structs, just parse the inner value directly.
+		// ALPM database files don't do newtype structs, just parse the inner value directly.
 		// If it's not a struct, we'll still give an error.
 		visitor.visit_newtype_struct(self)
 	}
@@ -333,11 +333,11 @@ impl<'de, R: BufRead> de::Deserializer<'de> for FieldDeserializer<'_, R> {
 	type Error = Error;
 
 	fn deserialize_any<V: de::Visitor<'de>>(self, _visitor: V) -> Result<V::Value, Self::Error> {
-		Err(Error::custom("ALPM field values are not self describing, so deserialize_any is not supported"))
+		Err(Error::custom("ALPM database field values are not self describing, so deserialize_any is not supported"))
 	}
 
 	fn deserialize_ignored_any<V: de::Visitor<'de>>(self, _visitor: V) -> Result<V::Value, Self::Error> {
-		Err(Error::custom("ALPM field values are not self describing, so deserialize_ignored_any is not supported"))
+		Err(Error::custom("ALPM database field values are not self describing, so deserialize_ignored_any is not supported"))
 	}
 
 	fn deserialize_bool<V: de::Visitor<'de>>(self, visitor: V) -> Result<V::Value, Self::Error> {
@@ -432,29 +432,28 @@ impl<'de, R: BufRead> de::Deserializer<'de> for FieldDeserializer<'_, R> {
 	}
 
 	fn deserialize_newtype_struct<V: de::Visitor<'de>>(self, _name: &str, visitor: V) -> Result<V::Value, Self::Error> {
-		// ALPM files don't do newtype structs, just parse the inner value directly.
-		// IMPORTANT: do not delegate to parent, as it would allow parsing structs and lists again.
+		// ALPM database files don't describe their types, so just parse the inner value directly.
 		visitor.visit_newtype_struct(self)
 	}
 
 	fn deserialize_tuple<V: de::Visitor<'de>>(self, _len: usize, _visitor: V) -> Result<V::Value, Self::Error> {
-		Err(Error::custom("ALPM format does not support tuples"))
+		Err(Error::custom("ALPM database format does not support tuples"))
 	}
 
 	fn deserialize_tuple_struct<V: de::Visitor<'de>>(self, _name: &str, _len: usize, _visitor: V) -> Result<V::Value, Self::Error> {
-		Err(Error::custom("ALPM format does not support tuple structs"))
+		Err(Error::custom("ALPM database format does not support tuple structs"))
 	}
 
 	fn deserialize_unit<V: de::Visitor<'de>>(self, _visitor: V) -> Result<V::Value, Self::Error> {
-		Err(Error::custom("ALPM format does not support unit values"))
+		Err(Error::custom("ALPM database format does not support unit values"))
 	}
 
 	fn deserialize_unit_struct<V: de::Visitor<'de>>(self, _name: &str, _visitor: V) -> Result<V::Value, Self::Error> {
-		Err(Error::custom("ALPM format does not support unit structs"))
+		Err(Error::custom("ALPM database format does not support unit structs"))
 	}
 
 	fn deserialize_map<V: de::Visitor<'de>>(self, _visitor: V) -> Result<V::Value, Self::Error> {
-		Err(Error::custom("ALPM format does not support maps"))
+		Err(Error::custom("ALPM database format does not support maps"))
 	}
 
 	fn deserialize_enum<V: de::Visitor<'de>>(self, name: &str, variants: &[&str], visitor: V) -> Result<V::Value, Self::Error> {
@@ -470,14 +469,14 @@ impl<'de, R: BufRead> de::Deserializer<'de> for FieldDeserializer<'_, R> {
 
 	fn deserialize_seq<V: de::Visitor<'de>>(self, visitor: V) -> Result<V::Value, Self::Error> {
 		if self.in_sequence {
-			Err(Error::custom("ALPM format does not support nested lists"))
+			Err(Error::custom("ALPM database format does not support nested lists"))
 		} else {
 			visitor.visit_seq(self)
 		}
 	}
 
 	fn deserialize_struct<V: de::Visitor<'de>>(self, _name: &str, _fields: &[&str], _visitor: V) -> Result<V::Value, Self::Error> {
-		Err(Error::custom("ALPM format does not support nested structs"))
+		Err(Error::custom("ALPM database format does not support nested structs"))
 	}
 
 	fn deserialize_identifier<V: de::Visitor<'de>>(self, visitor: V) -> Result<V::Value, Self::Error> {

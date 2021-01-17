@@ -1,3 +1,8 @@
+//! Types and parsers for repository database files.
+//!
+//! The types represent the contents of *.db.tar files.
+//! This module currently does not support reading (compressed) tar files directly.
+
 use serde::Deserialize;
 
 use crate::version::PackageVersion;
