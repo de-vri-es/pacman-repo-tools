@@ -1,6 +1,9 @@
 use structopt::StructOpt;
 use structopt::clap::AppSettings;
 use std::path::{Path, PathBuf};
+use std::collections::BTreeMap;
+
+use pacman_repo_tools::db::{DatabasePackage, read_db_dir};
 
 #[derive(StructOpt)]
 #[structopt(setting = AppSettings::ColoredHelp)]
@@ -76,7 +79,9 @@ async fn do_main(options: Options) -> Result<(), ()> {
 		return Err(());
 	}
 
-	sync_dbs(&options.database_dir, &databases).await?;
+	let packages = sync_dbs(&options.database_dir, &databases).await?;
+
+	eprintln!("{:?}", packages);
 
 	Ok(())
 }
@@ -107,11 +112,12 @@ fn read_files_to_vec(initial: Vec<String>, paths: &[impl AsRef<Path>]) -> Result
 }
 
 /// Download and extract the given database files specified by the URLs to the given directory.
-async fn sync_dbs(directory: impl AsRef<Path>, urls: &[impl AsRef<str>]) -> Result<(), ()> {
+async fn sync_dbs(directory: impl AsRef<Path>, urls: &[impl AsRef<str>]) -> Result<BTreeMap<String, (DatabasePackage, String)>, ()> {
 	let directory = directory.as_ref();
 
 	let mut names = std::collections::BTreeSet::new();
 	let mut repositories = Vec::new();
+	let mut packages = BTreeMap::new();
 
 	// TODO: check for duplicate database names
 	for url in urls {
@@ -130,10 +136,26 @@ async fn sync_dbs(directory: impl AsRef<Path>, urls: &[impl AsRef<str>]) -> Resu
 		repositories.push((name.to_string(), url));
 	}
 
-	for (name, url) in repositories {
-		download_database(&directory.join(name), url).await?
+	for (repo_name, url) in repositories {
+		let db_dir = directory.join(&repo_name);
+		download_database(&db_dir, url).await?;
+		let repository = read_db_dir(&db_dir)
+			.map_err(|e| eprintln!("Error: {}", e))?;
+		for package in repository {
+			use std::collections::btree_map::Entry;
+			match packages.entry(package.desc.name.clone()) {
+				Entry::Occupied(x) => {
+					let (_, earlier_repo) = x.get();
+					eprintln!("Warning: package {} already encountered in {} repository, ignoring package from {} repository", package.desc.name, earlier_repo, repo_name);
+				}
+				Entry::Vacant(entry) => {
+					entry.insert((package, repo_name.clone()));
+				}
+			}
+		}
 	}
-	Ok(())
+
+	Ok(packages)
 }
 
 /// Download and extract a database file.
