@@ -70,6 +70,13 @@ pub struct Error {
 	message: String,
 }
 
+impl Error {
+	fn with_source(mut self, source: Option<String>) -> Self {
+		self.source = source;
+		self
+	}
+}
+
 impl<R: BufRead> Deserializer<R> {
 	fn error(&self, msg: impl ToString) -> Error {
 		Error {
@@ -176,11 +183,11 @@ impl<'de, R: BufRead> de::Deserializer<'de> for &'_ mut Deserializer<R> {
 	type Error = Error;
 
 	fn deserialize_any<V: de::Visitor<'de>>(self, visitor: V) -> Result<V::Value, Self::Error> {
-		visitor.visit_map(self)
+		self.deserialize_map(visitor)
 	}
 
 	fn deserialize_ignored_any<V: de::Visitor<'de>>(self, visitor: V) -> Result<V::Value, Self::Error> {
-		visitor.visit_map(self)
+		self.deserialize_map(visitor)
 	}
 
 	fn deserialize_bool<V: de::Visitor<'de>>(self, _visitor: V) -> Result<V::Value, Self::Error> {
@@ -254,7 +261,8 @@ impl<'de, R: BufRead> de::Deserializer<'de> for &'_ mut Deserializer<R> {
 	fn deserialize_newtype_struct<V: de::Visitor<'de>>(self, _name: &str, visitor: V) -> Result<V::Value, Self::Error> {
 		// ALPM database files don't do newtype structs, just parse the inner value directly.
 		// If it's not a struct, we'll still give an error.
-		visitor.visit_newtype_struct(self)
+		let source = self.source.clone();
+		visitor.visit_newtype_struct(self).map_err(|e| e.with_source(source))
 	}
 
 	fn deserialize_tuple<V: de::Visitor<'de>>(self, _len: usize, _visitor: V) -> Result<V::Value, Self::Error> {
@@ -274,7 +282,8 @@ impl<'de, R: BufRead> de::Deserializer<'de> for &'_ mut Deserializer<R> {
 	}
 
 	fn deserialize_map<V: de::Visitor<'de>>(self, visitor: V) -> Result<V::Value, Self::Error> {
-		visitor.visit_map(self)
+		let source = self.source.clone();
+		visitor.visit_map(self).map_err(|e| e.with_source(source))
 	}
 
 	fn deserialize_enum<V: de::Visitor<'de>>(self, _name: &str, _variants: &[&str], _visitor: V) -> Result<V::Value, Self::Error> {
@@ -286,7 +295,7 @@ impl<'de, R: BufRead> de::Deserializer<'de> for &'_ mut Deserializer<R> {
 	}
 
 	fn deserialize_struct<V: de::Visitor<'de>>(self, _name: &str, _fields: &[&str], visitor: V) -> Result<V::Value, Self::Error> {
-		visitor.visit_map(self)
+		self.deserialize_map(visitor)
 	}
 
 	fn deserialize_identifier<V: de::Visitor<'de>>(self, _visitor: V) -> Result<V::Value, Self::Error> {
