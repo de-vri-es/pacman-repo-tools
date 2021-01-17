@@ -4,13 +4,19 @@
 //! This module currently does not support reading (compressed) tar files directly.
 
 use serde::Deserialize;
+use std::path::{Path, PathBuf};
 
 use crate::version::PackageVersion;
 use crate::package::{Dependency, Provides};
 
 mod deserializer;
 
-pub use deserializer::{from_bytes, from_str, from_file};
+pub use deserializer::{
+	Error as ParseError,
+	from_bytes,
+	from_str,
+	from_file,
+};
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "UPPERCASE")]
@@ -59,6 +65,63 @@ pub struct DatabasePackageDepends {
 	pub makedepends: Vec<Dependency>,
 	#[serde(default)]
 	pub checkdepends: Vec<Dependency>,
+}
+
+#[derive(Debug)]
+pub struct DatabasePackage {
+	pub desc: DatabasePackageDesc,
+	pub depends: DatabasePackageDepends,
+}
+
+impl DatabasePackage {
+	pub fn from_directory(path: impl AsRef<Path>) -> Result<Self, ParseError> {
+		let path = path.as_ref();
+		let desc = from_file(path.join("desc"))?;
+		let depends = from_file(path.join("depends"))?;
+		Ok(Self { desc, depends })
+	}
+}
+
+#[derive(Debug)]
+pub enum ReadDbDirError {
+	ReadDir(PathBuf, std::io::Error),
+	Parse(ParseError),
+}
+
+/// Read packages information from a folder containing an extracted repository database.
+pub fn read_db_dir(path: impl AsRef<Path>) -> Result<Vec<DatabasePackage>, ReadDbDirError> {
+	let path = path.as_ref();
+	let readdir_error = |e| ReadDbDirError::ReadDir(path.into(), e);
+
+	let dir = std::fs::read_dir(path).map_err(readdir_error)?;
+	let mut packages = Vec::with_capacity(dir.size_hint().0);
+	for entry in dir {
+		let entry = entry.map_err(readdir_error)?;
+		let stat = entry.metadata().map_err(readdir_error)?;
+		if !stat.file_type().is_dir() {
+			continue;
+		}
+		packages.push(DatabasePackage::from_directory(entry.path())?);
+	}
+
+	Ok(packages)
+}
+
+impl From<ParseError> for ReadDbDirError {
+	fn from(other: ParseError) -> Self {
+		Self::Parse(other)
+	}
+}
+
+impl std::error::Error for ReadDbDirError {}
+
+impl std::fmt::Display for ReadDbDirError {
+	fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+		match self {
+			Self::ReadDir(path, e) => write!(f, "failed to read directory {}: {}", path.display(), e),
+			Self::Parse(e) => e.fmt(f),
+		}
+	}
 }
 
 #[cfg(test)]
