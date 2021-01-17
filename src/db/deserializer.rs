@@ -108,7 +108,6 @@ impl<R: BufRead> Deserializer<R> {
 	fn read_line(&mut self) -> Result<Option<String>, Error> {
 		if let Some(line) = self.peek_buffer.take() {
 			self.line += 1;
-			eprintln!("reading previously peeked line: {}", line);
 			return Ok(Some(line))
 		}
 
@@ -131,7 +130,6 @@ impl<R: BufRead> Deserializer<R> {
 				if line.is_empty() {
 					continue;
 				}
-				eprintln!("reading new line: {}", line);
 				return Ok(Some(line));
 			}
 		}
@@ -139,13 +137,11 @@ impl<R: BufRead> Deserializer<R> {
 
 	/// Like [`Self::read_line`], but return an error if the input is exhausted.
 	fn read_expected_line(&mut self) -> Result<String, Error> {
-		eprintln!("read_expected_line()");
 		self.read_line()?.ok_or_else(|| self.error("unexpected end of file"))
 	}
 
 	/// Read a line and parse a [`std::str::FromStr`] value from it.
 	fn read_value<T: std::str::FromStr>(&mut self, type_name: &str) -> Result<T, Error> {
-		eprintln!("read_single_value()");
 		let line = self.read_expected_line()?;
 		let value = line.parse().map_err(|_| self.error(format_args!("invalid value, expected {}", type_name)))?;
 		Ok(value)
@@ -157,7 +153,6 @@ impl<R: BufRead> Deserializer<R> {
 	/// If the read line does not match the format,
 	/// an error is returned.
 	fn read_key(&mut self) -> Result<Option<String>, Error> {
-		eprintln!("read_key()");
 		let mut line = match self.read_line()? {
 			None => return Ok(None),
 			Some(x) => x,
