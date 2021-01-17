@@ -1,38 +1,44 @@
-use std::io::{Read, BufRead, BufReader};
+use std::io::{BufRead, BufReader};
 use std::path::Path;
 use serde::de;
 use serde::de::Error as _;
 
-pub struct Deserializer<'a> {
-	reader: BufReader<Box<dyn Read + 'a>>,
+pub struct Deserializer<R> {
+	reader: R,
 	source: Option<String>,
 	line: u32,
 	peek_buffer: Option<String>,
 }
 
-impl<'a> Deserializer<'a> {
-	pub fn new<R: Read + 'a>(read: R, source: Option<String>) -> Self {
+impl<R: BufRead> Deserializer<R> {
+	pub fn new(reader: R, source: Option<String>) -> Self {
 		Self {
-			reader: BufReader::new(Box::new(read)),
+			reader,
 			source,
 			line: 0,
 			peek_buffer: None,
 		}
 	}
+}
 
+impl<'a> Deserializer<std::io::Cursor<&'a str>> {
 	pub fn from_str(data: &'a str, source: Option<String>) -> Self {
 		Self::new(std::io::Cursor::new(data), source)
 	}
+}
 
+impl<'a> Deserializer<std::io::Cursor<&'a [u8]>> {
 	pub fn from_bytes(data: &'a [u8], source: Option<String>) -> Self {
 		Self::new(std::io::Cursor::new(data), source)
 	}
+}
 
+impl Deserializer<BufReader<std::fs::File>> {
 	pub fn from_file(path: impl AsRef<Path>) -> std::io::Result<Self> {
 		let path = path.as_ref();
 		let file = std::fs::File::open(path)?;
 		let source = path.display().to_string();
-		Ok(Self::new(file, Some(source)))
+		Ok(Self::new(BufReader::new(file), Some(source)))
 	}
 }
 
@@ -64,7 +70,7 @@ pub struct Error {
 	message: String,
 }
 
-impl Deserializer<'_> {
+impl<R: BufRead> Deserializer<R> {
 	fn error(&self, msg: impl ToString) -> Error {
 		Error {
 			source: self.source.clone(),
@@ -171,7 +177,7 @@ fn unexpected_top_level_type(name: &str) -> Error {
 	Error::custom(format_args!("the top level type must be a struct for the ALPM format, but it is {}", name))
 }
 
-impl<'de> de::Deserializer<'de> for &'_ mut Deserializer<'_> {
+impl<'de, R: BufRead> de::Deserializer<'de> for &'_ mut Deserializer<R> {
 	type Error = Error;
 
 	fn deserialize_any<V: de::Visitor<'de>>(self, visitor: V) -> Result<V::Value, Self::Error> {
@@ -293,7 +299,7 @@ impl<'de> de::Deserializer<'de> for &'_ mut Deserializer<'_> {
 	}
 }
 
-impl<'de> de::MapAccess<'de> for Deserializer<'_> {
+impl<'de, R: BufRead> de::MapAccess<'de> for Deserializer<R> {
 	type Error = Error;
 
 	fn next_key_seed<K: de::DeserializeSeed<'de>>(&mut self, seed: K) -> Result<Option<K::Value>, Self::Error> {
@@ -318,12 +324,12 @@ impl<'de> de::MapAccess<'de> for Deserializer<'_> {
 }
 
 /// Deserializer that can only deserialize unstructered values.
-struct FieldDeserializer<'a, 'b> {
-	parent: &'a mut Deserializer<'b>,
+struct FieldDeserializer<'a, R> {
+	parent: &'a mut Deserializer<R>,
 	in_sequence: bool,
 }
 
-impl<'de> de::Deserializer<'de> for FieldDeserializer<'_, '_> {
+impl<'de, R: BufRead> de::Deserializer<'de> for FieldDeserializer<'_, R> {
 	type Error = Error;
 
 	fn deserialize_any<V: de::Visitor<'de>>(self, _visitor: V) -> Result<V::Value, Self::Error> {
@@ -484,7 +490,7 @@ impl<'de> de::Deserializer<'de> for FieldDeserializer<'_, '_> {
 	}
 }
 
-impl<'de> de::SeqAccess<'de> for FieldDeserializer<'_, '_> {
+impl<'de, R: BufRead> de::SeqAccess<'de> for FieldDeserializer<'_, R> {
 	type Error = Error;
 
 	fn next_element_seed<T: de::DeserializeSeed<'de>>(&mut self, seed: T) -> Result<Option<T::Value>, Self::Error> {
