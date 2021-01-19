@@ -1,9 +1,9 @@
-use structopt::StructOpt;
-use structopt::clap::AppSettings;
-use std::path::{Path, PathBuf};
 use std::collections::{BTreeMap, BTreeSet};
+use std::path::{Path, PathBuf};
+use structopt::clap::AppSettings;
+use structopt::StructOpt;
 
-use pacman_repo_tools::db::{DatabasePackage, read_db_dir};
+use pacman_repo_tools::db::{read_db_dir, DatabasePackage};
 
 #[derive(StructOpt)]
 #[structopt(setting = AppSettings::ColoredHelp)]
@@ -48,15 +48,13 @@ struct Options {
 }
 
 fn main() {
-	let runtime = tokio::runtime::Builder::new_current_thread()
-		.enable_all()
-		.build();
+	let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build();
 	let runtime = match runtime {
 		Ok(x) => x,
 		Err(e) => {
 			eprintln!("Error: failed to initialize tokio runtime: {}", e);
 			std::process::exit(1);
-		}
+		},
 	};
 	runtime.block_on(async {
 		if do_main(Options::from_args()).await.is_err() {
@@ -98,7 +96,6 @@ async fn do_main(options: Options) -> Result<(), ()> {
 		targets.iter().map(String::as_str).collect()
 	};
 
-
 	eprintln!("Packages to download: {:?}", targets);
 
 	Ok(())
@@ -139,8 +136,7 @@ async fn sync_dbs(directory: impl AsRef<Path>, urls: &[impl AsRef<str>]) -> Resu
 
 	// TODO: check for duplicate database names
 	for url in urls {
-		let url = reqwest::Url::parse(url.as_ref())
-			.map_err(|e| eprintln!("Invalid URL: {}: {}", url.as_ref(), e))?;
+		let url = reqwest::Url::parse(url.as_ref()).map_err(|e| eprintln!("Invalid URL: {}: {}", url.as_ref(), e))?;
 		let name = Path::new(url.path())
 			.file_name()
 			.ok_or_else(|| eprintln!("Could not determine file name from URL: {}", url))?
@@ -149,7 +145,7 @@ async fn sync_dbs(directory: impl AsRef<Path>, urls: &[impl AsRef<str>]) -> Resu
 
 		if !names.insert(name.to_string()) {
 			eprintln!("Error: duplicate repository name: {}", name);
-			return Err(())
+			return Err(());
 		}
 		databases.push((name.to_string(), url));
 	}
@@ -158,8 +154,7 @@ async fn sync_dbs(directory: impl AsRef<Path>, urls: &[impl AsRef<str>]) -> Resu
 		let db_dir = directory.join(&name);
 		download_database(&db_dir, url).await?;
 
-		let packages = read_db_dir(&db_dir)
-			.map_err(|e| eprintln!("Error: {}", e))?;
+		let packages = read_db_dir(&db_dir).map_err(|e| eprintln!("Error: {}", e))?;
 		repositories.push((name, packages));
 	}
 
@@ -175,11 +170,14 @@ fn index_packages_by_name(repositories: &[(String, Vec<DatabasePackage>)]) -> BT
 			match index.entry(package.desc.name.as_str()) {
 				Entry::Occupied(x) => {
 					let (earlier_repo, _) = x.get();
-					eprintln!("Warning: package {} already encountered in {} repository, ignoring package from {} repository", package.desc.name, earlier_repo, repo_name);
-				}
+					eprintln!(
+						"Warning: package {} already encountered in {} repository, ignoring package from {} repository",
+						package.desc.name, earlier_repo, repo_name
+					);
+				},
 				Entry::Vacant(entry) => {
 					entry.insert((repo_name.as_str(), package));
-				}
+				},
 			}
 		}
 	}
@@ -248,7 +246,10 @@ impl<'a, 'b> DependencyResolver<'a, 'b> {
 						self.reachable.insert(provider);
 						continue;
 					} else {
-						eprintln!("Error: missing dependency information for package {} as provider for {}", provider, target);
+						eprintln!(
+							"Error: missing dependency information for package {} as provider for {}",
+							provider, target
+						);
 						return Err(());
 					}
 				} else {
@@ -291,15 +292,16 @@ async fn extract_archive(directory: &Path, data: &[u8]) -> Result<(), ()> {
 		.map_err(|e| eprintln!("Error: failed to run bsdtar: {}", e))?;
 
 	// Write archive to standard input of bsdtar.
-	let mut stdin = process.stdin.take()
-		.ok_or_else(|| eprintln!("Error: failed to get stdin for bsdtar"))?;
-	stdin.write_all(data)
+	let mut stdin = process.stdin.take().ok_or_else(|| eprintln!("Error: failed to get stdin for bsdtar"))?;
+	stdin
+		.write_all(data)
 		.await
 		.map_err(|e| eprintln!("Error: failed to write to bsdtar stdin: {}", e))?;
 	drop(stdin);
 
 	// Wait for bsdtar to finish.
-	let exit_status = process.wait()
+	let exit_status = process
+		.wait()
 		.await
 		.map_err(|e| eprintln!("Error: failed to wait for bsdtar to exit: {}", e))?;
 
@@ -315,8 +317,7 @@ async fn extract_archive(directory: &Path, data: &[u8]) -> Result<(), ()> {
 /// Create a directory and all parent directories as needed.
 fn make_dirs(path: impl AsRef<Path>) -> Result<(), ()> {
 	let path = path.as_ref();
-	std::fs::create_dir_all(path)
-		.map_err(|e| eprintln!("Error: failed to create directiry {}: {}", path.display(), e))
+	std::fs::create_dir_all(path).map_err(|e| eprintln!("Error: failed to create directiry {}: {}", path.display(), e))
 }
 
 /// Recursively remove a directory and it's content.
@@ -328,16 +329,12 @@ fn remove_dir_all(path: impl AsRef<Path>) -> Result<(), ()> {
 		Err(e) => {
 			eprintln!("Error: failed to remove directory {} or it's content: {}", path.display(), e);
 			Err(())
-		}
+		},
 	}
 }
 
 /// Download a file over HTTP(S).
 async fn download_file(url: reqwest::Url) -> Result<Vec<u8>, reqwest::Error> {
-	let response = reqwest::get(url.clone())
-		.await?
-		.bytes()
-		.await?
-		.to_vec();
+	let response = reqwest::get(url.clone()).await?.bytes().await?.to_vec();
 	Ok(response)
 }

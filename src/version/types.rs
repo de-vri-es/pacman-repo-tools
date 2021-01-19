@@ -271,9 +271,7 @@ mod test {
 
 	#[test]
 	fn test_parse() {
-		let parse = |x: &str| -> Result<PackageVersion, _> {
-			x.parse()
-		};
+		let parse = |x: &str| -> Result<PackageVersion, _> { x.parse() };
 
 		assert!(parse("1.2.3-4") == Ok(PackageVersion::new(0, "1.2.3", "4")));
 		assert!(parse("1.2.3-4.5") == Ok(PackageVersion::new(0, "1.2.3", "4.5")));

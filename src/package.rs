@@ -1,5 +1,5 @@
-use crate::version::{Version, VersionFromStrError};
 use crate::parse::partition;
+use crate::version::{Version, VersionFromStrError};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct Provides {
@@ -150,7 +150,7 @@ impl std::str::FromStr for Dependency {
 				version: Some(VersionConstraint {
 					version: version.parse()?,
 					constraint,
-				})
+				}),
 			})
 		} else {
 			Ok(Dependency {
@@ -167,7 +167,7 @@ impl std::str::FromStr for OptionalDependency {
 
 	fn from_str(input: &str) -> Result<Self, Self::Err> {
 		let (depends, description) = match input.find(": ") {
-			Some(i) => (&input[..i], &input[i+2..]),
+			Some(i) => (&input[..i], &input[i + 2..]),
 			None => (input, ""),
 		};
 
@@ -217,7 +217,9 @@ impl<'de> serde::Deserialize<'de> for Provides {
 			}
 
 			fn visit_str<E: serde::de::Error>(self, value: &str) -> Result<Self::Value, E> {
-				value.parse().map_err(|e| E::custom(format_args!("invalid version in provides declaration: {}", e)))
+				value
+					.parse()
+					.map_err(|e| E::custom(format_args!("invalid version in provides declaration: {}", e)))
 			}
 		}
 
@@ -236,7 +238,9 @@ impl<'de> serde::Deserialize<'de> for Dependency {
 			}
 
 			fn visit_str<E: serde::de::Error>(self, value: &str) -> Result<Self::Value, E> {
-				value.parse().map_err(|e| E::custom(format_args!("invalid version in dependency declaration: {}", e)))
+				value
+					.parse()
+					.map_err(|e| E::custom(format_args!("invalid version in dependency declaration: {}", e)))
 			}
 		}
 
@@ -255,7 +259,9 @@ impl<'de> serde::Deserialize<'de> for OptionalDependency {
 			}
 
 			fn visit_str<E: serde::de::Error>(self, value: &str) -> Result<Self::Value, E> {
-				value.parse().map_err(|e| E::custom(format_args!("invalid version in optional dependency declaration: {}", e)))
+				value
+					.parse()
+					.map_err(|e| E::custom(format_args!("invalid version in optional dependency declaration: {}", e)))
 			}
 		}
 

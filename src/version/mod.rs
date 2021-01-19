@@ -24,10 +24,5 @@
 mod compare;
 mod types;
 
-pub use self::types::{
-	PackageVersion,
-	PackageVersionFromStrError,
-	Version,
-	VersionFromStrError,
-};
 pub use self::compare::compare_version_string;
+pub use self::types::{PackageVersion, PackageVersionFromStrError, Version, VersionFromStrError};

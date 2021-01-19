@@ -1,7 +1,7 @@
-use std::io::{BufRead, BufReader};
-use std::path::Path;
 use serde::de;
 use serde::de::Error as _;
+use std::io::{BufRead, BufReader};
+use std::path::Path;
 
 pub struct Deserializer<R> {
 	reader: R,
@@ -54,12 +54,11 @@ pub fn from_bytes<'a, T: serde::de::DeserializeOwned>(data: &'a [u8]) -> Result<
 
 pub fn from_file<'a, T: serde::de::DeserializeOwned>(path: impl AsRef<Path>) -> Result<T, Error> {
 	let path = path.as_ref();
-	let mut deserializer = Deserializer::from_file(path)
-		.map_err(|e| Error {
-			source: Some(path.display().to_string()),
-			line: None,
-			message: format!("failed to open file for reading: {}", e),
-		})?;
+	let mut deserializer = Deserializer::from_file(path).map_err(|e| Error {
+		source: Some(path.display().to_string()),
+		line: None,
+		message: format!("failed to open file for reading: {}", e),
+	})?;
 	T::deserialize(&mut deserializer)
 }
 
@@ -115,7 +114,7 @@ impl<R: BufRead> Deserializer<R> {
 	fn read_line(&mut self) -> Result<Option<String>, Error> {
 		if let Some(line) = self.peek_buffer.take() {
 			self.line += 1;
-			return Ok(Some(line))
+			return Ok(Some(line));
 		}
 
 		loop {
@@ -125,7 +124,7 @@ impl<R: BufRead> Deserializer<R> {
 
 			// If we got one, strip line endings and return it.
 			if size == 0 {
-				return Ok(None)
+				return Ok(None);
 			} else {
 				if line.ends_with('\n') {
 					line.pop();
@@ -150,7 +149,9 @@ impl<R: BufRead> Deserializer<R> {
 	/// Read a line and parse a [`std::str::FromStr`] value from it.
 	fn read_value<T: std::str::FromStr>(&mut self, type_name: &str) -> Result<T, Error> {
 		let line = self.read_expected_line()?;
-		let value = line.parse().map_err(|_| self.error(format_args!("invalid value, expected {}", type_name)))?;
+		let value = line
+			.parse()
+			.map_err(|_| self.error(format_args!("invalid value, expected {}", type_name)))?;
 		Ok(value)
 	}
 
@@ -176,7 +177,10 @@ impl<R: BufRead> Deserializer<R> {
 }
 
 fn unexpected_top_level_type(name: &str) -> Error {
-	Error::custom(format_args!("the top level type must be a struct for the ALPM database format, but it is {}", name))
+	Error::custom(format_args!(
+		"the top level type must be a struct for the ALPM database format, but it is {}",
+		name
+	))
 }
 
 impl<'de, R: BufRead> de::Deserializer<'de> for &'_ mut Deserializer<R> {
@@ -337,11 +341,15 @@ impl<'de, R: BufRead> de::Deserializer<'de> for FieldDeserializer<'_, R> {
 	type Error = Error;
 
 	fn deserialize_any<V: de::Visitor<'de>>(self, _visitor: V) -> Result<V::Value, Self::Error> {
-		Err(Error::custom("ALPM database field values are not self describing, so deserialize_any is not supported"))
+		Err(Error::custom(
+			"ALPM database field values are not self describing, so deserialize_any is not supported",
+		))
 	}
 
 	fn deserialize_ignored_any<V: de::Visitor<'de>>(self, _visitor: V) -> Result<V::Value, Self::Error> {
-		Err(Error::custom("ALPM database field values are not self describing, so deserialize_ignored_any is not supported"))
+		Err(Error::custom(
+			"ALPM database field values are not self describing, so deserialize_ignored_any is not supported",
+		))
 	}
 
 	fn deserialize_bool<V: de::Visitor<'de>>(self, visitor: V) -> Result<V::Value, Self::Error> {
@@ -534,7 +542,6 @@ impl de::Error for Error {
 		}
 	}
 }
-
 
 #[cfg(test)]
 mod test {

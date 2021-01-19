@@ -6,17 +6,12 @@
 use serde::Deserialize;
 use std::path::{Path, PathBuf};
 
-use crate::version::PackageVersion;
 use crate::package::{Dependency, OptionalDependency, Provides};
+use crate::version::PackageVersion;
 
 mod deserializer;
 
-pub use deserializer::{
-	Error as ParseError,
-	from_bytes,
-	from_str,
-	from_file,
-};
+pub use deserializer::{from_bytes, from_file, from_str, Error as ParseError};
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "UPPERCASE")]
@@ -128,8 +123,8 @@ impl std::fmt::Display for ReadDbDirError {
 #[cfg(test)]
 mod test {
 	use super::*;
-	use assert2::{assert, let_assert};
 	use crate::version::Version;
+	use assert2::{assert, let_assert};
 
 	const PACKAGE_DESC: &[u8] = include_bytes!("../../tests/database-package/desc");
 	const PACKAGE_DEPENDS: &[u8] = include_bytes!("../../tests/database-package/depends");
@@ -158,6 +153,7 @@ mod test {
 	}
 
 	#[test]
+	#[rustfmt::skip]
 	fn test_parse_package_depends() {
 		let_assert!(Ok(parsed) = from_bytes::<DatabasePackageDepends>(PACKAGE_DEPENDS));
 		assert!(parsed.depends == vec![
