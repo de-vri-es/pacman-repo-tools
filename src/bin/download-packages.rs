@@ -1,7 +1,7 @@
 use structopt::StructOpt;
 use structopt::clap::AppSettings;
 use std::path::{Path, PathBuf};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use pacman_repo_tools::db::{DatabasePackage, read_db_dir};
 
@@ -66,10 +66,10 @@ fn main() {
 }
 
 async fn do_main(options: Options) -> Result<(), ()> {
-	let packages = read_files_to_vec(options.packages, &options.package_files)?;
+	let targets = read_files_to_vec(options.packages, &options.package_files)?;
 	let databases = read_files_to_vec(options.databases, &options.database_files)?;
 
-	if packages.is_empty() {
+	if targets.is_empty() {
 		eprintln!("Error: need atleast one package to download");
 		return Err(());
 	}
@@ -79,9 +79,27 @@ async fn do_main(options: Options) -> Result<(), ()> {
 		return Err(());
 	}
 
-	let packages = sync_dbs(&options.database_dir, &databases).await?;
+	let repositories = sync_dbs(&options.database_dir, &databases).await?;
+	eprintln!("Building package index.");
+	let packages = index_packages_by_name(&repositories);
 
-	eprintln!("{:?}", packages);
+	let targets = if options.dependencies {
+		eprintln!("Building providers index.");
+		let providers = index_providers(&packages);
+		eprintln!("Building dependency index.");
+		let depends = index_dependencies(&packages);
+
+		let mut resolver = DependencyResolver::new(&depends, &providers);
+		for target in &targets {
+			resolver.add_target(target)?;
+		}
+		resolver.into_targets()
+	} else {
+		targets.iter().map(String::as_str).collect()
+	};
+
+
+	eprintln!("Packages to download: {:?}", targets);
 
 	Ok(())
 }
@@ -112,12 +130,12 @@ fn read_files_to_vec(initial: Vec<String>, paths: &[impl AsRef<Path>]) -> Result
 }
 
 /// Download and extract the given database files specified by the URLs to the given directory.
-async fn sync_dbs(directory: impl AsRef<Path>, urls: &[impl AsRef<str>]) -> Result<BTreeMap<String, (DatabasePackage, String)>, ()> {
+async fn sync_dbs(directory: impl AsRef<Path>, urls: &[impl AsRef<str>]) -> Result<Vec<(String, Vec<DatabasePackage>)>, ()> {
 	let directory = directory.as_ref();
 
 	let mut names = std::collections::BTreeSet::new();
+	let mut databases = Vec::new();
 	let mut repositories = Vec::new();
-	let mut packages = BTreeMap::new();
 
 	// TODO: check for duplicate database names
 	for url in urls {
@@ -133,29 +151,130 @@ async fn sync_dbs(directory: impl AsRef<Path>, urls: &[impl AsRef<str>]) -> Resu
 			eprintln!("Error: duplicate repository name: {}", name);
 			return Err(())
 		}
-		repositories.push((name.to_string(), url));
+		databases.push((name.to_string(), url));
 	}
 
-	for (repo_name, url) in repositories {
-		let db_dir = directory.join(&repo_name);
+	for (name, url) in databases {
+		let db_dir = directory.join(&name);
 		download_database(&db_dir, url).await?;
-		let repository = read_db_dir(&db_dir)
+
+		let packages = read_db_dir(&db_dir)
 			.map_err(|e| eprintln!("Error: {}", e))?;
-		for package in repository {
-			use std::collections::btree_map::Entry;
-			match packages.entry(package.desc.name.clone()) {
+		repositories.push((name, packages));
+	}
+
+	Ok(repositories)
+}
+
+fn index_packages_by_name(repositories: &[(String, Vec<DatabasePackage>)]) -> BTreeMap<&str, (&str, &DatabasePackage)> {
+	use std::collections::btree_map::Entry;
+
+	let mut index = BTreeMap::new();
+	for (repo_name, packages) in repositories {
+		for package in packages {
+			match index.entry(package.desc.name.as_str()) {
 				Entry::Occupied(x) => {
-					let (_, earlier_repo) = x.get();
+					let (earlier_repo, _) = x.get();
 					eprintln!("Warning: package {} already encountered in {} repository, ignoring package from {} repository", package.desc.name, earlier_repo, repo_name);
 				}
 				Entry::Vacant(entry) => {
-					entry.insert((package, repo_name.clone()));
+					entry.insert((repo_name.as_str(), package));
 				}
 			}
 		}
 	}
 
-	Ok(packages)
+	index
+}
+
+/// Create an index of virtual target names to concrete packages that provide the target.
+fn index_providers<'a>(packages: &BTreeMap<&'a str, (&'a str, &'a DatabasePackage)>) -> BTreeMap<&'a str, BTreeSet<&'a str>> {
+	let mut index: BTreeMap<&'a str, BTreeSet<&'a str>> = BTreeMap::new();
+	for (_repo, package) in packages.values() {
+		index.entry(&package.desc.name).or_default().insert(&package.desc.name);
+		for target in &package.depends.provides {
+			index.entry(&target.name).or_default().insert(&package.desc.name);
+		}
+	}
+	index
+}
+
+fn index_dependencies<'a>(packages: &BTreeMap<&'a str, (&'a str, &'a DatabasePackage)>) -> BTreeMap<&'a str, BTreeSet<&'a str>> {
+	let mut index: BTreeMap<&'a str, BTreeSet<&'a str>> = BTreeMap::new();
+	for (_repo, package) in packages.values() {
+		let depends = index.entry(&package.desc.name).or_default();
+		depends.extend(package.depends.depends.iter().map(|x| x.name.as_str()));
+	}
+	index
+}
+
+struct DependencyResolver<'a, 'b> {
+	dependencies: &'b BTreeMap<&'a str, BTreeSet<&'a str>>,
+	providers: &'b BTreeMap<&'a str, BTreeSet<&'a str>>,
+	reachable: BTreeSet<&'a str>,
+}
+
+impl<'a, 'b> DependencyResolver<'a, 'b> {
+	pub fn new(dependencies: &'b BTreeMap<&'a str, BTreeSet<&'a str>>, providers: &'b BTreeMap<&'a str, BTreeSet<&'a str>>) -> Self {
+		Self {
+			dependencies,
+			providers,
+			reachable: BTreeSet::new(),
+		}
+	}
+
+	pub fn into_targets(self) -> BTreeSet<&'a str> {
+		self.reachable
+	}
+
+	pub fn add_target(&mut self, target: &'a str) -> Result<(), ()> {
+		if self.reachable.contains(target) {
+			return Ok(());
+		}
+
+		let mut targets = BTreeSet::new();
+		targets.insert(target);
+
+		while !targets.is_empty() {
+			let target = *targets.iter().next().unwrap();
+			targets.remove(target);
+			if let Some(depends) = self.dependencies.get(target) {
+				targets.extend(depends.difference(&self.reachable));
+				self.reachable.insert(target);
+			} else if let Some(providers) = self.providers.get(target) {
+				if let Some(provider) = providers.iter().next() {
+					if let Some(depends) = self.dependencies.get(provider) {
+						targets.extend(depends.difference(&self.reachable));
+						self.reachable.insert(provider);
+						continue;
+					} else {
+						eprintln!("Error: missing dependency information for package {} as provider for {}", provider, target);
+						return Err(());
+					}
+				} else {
+					eprintln!("Error: unknown package: {}", target);
+					return Err(());
+				}
+			} else {
+				eprintln!("Error: unknown package: {}", target);
+				return Err(());
+			}
+		}
+
+		Ok(())
+	}
+}
+
+fn push_entry<K: Ord, V>(map: &mut BTreeMap<K, Vec<V>>, key: K, value: V) {
+	use std::collections::btree_map::Entry;
+	match map.entry(key) {
+		Entry::Vacant(x) => {
+			x.insert(vec![value]);
+		},
+		Entry::Occupied(mut x) => {
+			x.get_mut().push(value);
+		}
+	}
 }
 
 /// Download and extract a database file.
