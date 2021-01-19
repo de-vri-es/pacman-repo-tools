@@ -78,20 +78,11 @@ async fn do_main(options: Options) -> Result<(), ()> {
 	}
 
 	let repositories = sync_dbs(&options.database_dir, &databases).await?;
-	eprintln!("Building package index.");
 	let packages = index_packages_by_name(&repositories);
 
 	let targets = if options.dependencies {
-		eprintln!("Building providers index.");
-		let providers = index_providers(&packages);
-		eprintln!("Building dependency index.");
-		let depends = index_dependencies(&packages);
-
-		let mut resolver = DependencyResolver::new(&depends, &providers);
-		for target in &targets {
-			resolver.add_target(target)?;
-		}
-		resolver.into_targets()
+		let resolver = DependencyResolver::new(&packages);
+		resolver.resolve(&targets)?
 	} else {
 		targets.iter().map(String::as_str).collect()
 	};
@@ -167,12 +158,12 @@ fn index_packages_by_name(repositories: &[(String, Vec<DatabasePackage>)]) -> BT
 	let mut index = BTreeMap::new();
 	for (repo_name, packages) in repositories {
 		for package in packages {
-			match index.entry(package.desc.name.as_str()) {
+			match index.entry(package.name.as_str()) {
 				Entry::Occupied(x) => {
 					let (earlier_repo, _) = x.get();
 					eprintln!(
 						"Warning: package {} already encountered in {} repository, ignoring package from {} repository",
-						package.desc.name, earlier_repo, repo_name
+						package.name, earlier_repo, repo_name
 					);
 				},
 				Entry::Vacant(entry) => {
@@ -189,81 +180,100 @@ fn index_packages_by_name(repositories: &[(String, Vec<DatabasePackage>)]) -> BT
 fn index_providers<'a>(packages: &BTreeMap<&'a str, (&'a str, &'a DatabasePackage)>) -> BTreeMap<&'a str, BTreeSet<&'a str>> {
 	let mut index: BTreeMap<&'a str, BTreeSet<&'a str>> = BTreeMap::new();
 	for (_repo, package) in packages.values() {
-		index.entry(&package.desc.name).or_default().insert(&package.desc.name);
-		for target in &package.depends.provides {
-			index.entry(&target.name).or_default().insert(&package.desc.name);
+		index.entry(&package.name).or_default().insert(&package.name);
+		for target in &package.provides {
+			index.entry(&target.name).or_default().insert(&package.name);
 		}
-	}
-	index
-}
-
-fn index_dependencies<'a>(packages: &BTreeMap<&'a str, (&'a str, &'a DatabasePackage)>) -> BTreeMap<&'a str, BTreeSet<&'a str>> {
-	let mut index: BTreeMap<&'a str, BTreeSet<&'a str>> = BTreeMap::new();
-	for (_repo, package) in packages.values() {
-		let depends = index.entry(&package.desc.name).or_default();
-		depends.extend(package.depends.depends.iter().map(|x| x.name.as_str()));
 	}
 	index
 }
 
 struct DependencyResolver<'a, 'b> {
-	dependencies: &'b BTreeMap<&'a str, BTreeSet<&'a str>>,
-	providers: &'b BTreeMap<&'a str, BTreeSet<&'a str>>,
-	reachable: BTreeSet<&'a str>,
+	packages: &'b BTreeMap<&'a str, (&'a str, &'a DatabasePackage)>,
+	providers: BTreeMap<&'a str, BTreeSet<&'a str>>,
+	selected_packages: BTreeSet<&'a str>,
+	provided_targets: BTreeSet<&'a str>,
 }
 
 impl<'a, 'b> DependencyResolver<'a, 'b> {
-	pub fn new(dependencies: &'b BTreeMap<&'a str, BTreeSet<&'a str>>, providers: &'b BTreeMap<&'a str, BTreeSet<&'a str>>) -> Self {
+	pub fn new(packages: &'b BTreeMap<&'a str, (&'a str, &'a DatabasePackage)>) -> Self {
 		Self {
-			dependencies,
-			providers,
-			reachable: BTreeSet::new(),
+			packages,
+			providers: index_providers(&packages),
+			selected_packages: BTreeSet::new(),
+			provided_targets: BTreeSet::new(),
 		}
 	}
 
-	pub fn into_targets(self) -> BTreeSet<&'a str> {
-		self.reachable
-	}
+	pub fn resolve(mut self, targets: &[impl AsRef<str>]) -> Result<BTreeSet<&'a str>, ()> {
+		let mut queue = BTreeSet::new();
 
-	pub fn add_target(&mut self, target: &'a str) -> Result<(), ()> {
-		if self.reachable.contains(target) {
-			return Ok(());
-		}
-
-		let mut targets = BTreeSet::new();
-		targets.insert(target);
-
-		while !targets.is_empty() {
-			let target = *targets.iter().next().unwrap();
-			targets.remove(target);
-			if let Some(depends) = self.dependencies.get(target) {
-				targets.extend(depends.difference(&self.reachable));
-				self.reachable.insert(target);
-			} else if let Some(providers) = self.providers.get(target) {
-				if let Some(provider) = providers.iter().next() {
-					if let Some(depends) = self.dependencies.get(provider) {
-						targets.extend(depends.difference(&self.reachable));
-						self.reachable.insert(provider);
-						continue;
-					} else {
-						eprintln!(
-							"Error: missing dependency information for package {} as provider for {}",
-							provider, target
-						);
-						return Err(());
-					}
-				} else {
-					eprintln!("Error: unknown package: {}", target);
-					return Err(());
+		for target in targets {
+			let target = target.as_ref();
+			// First add all explicitly listed real packages.
+			if let Some((_repo, package)) = self.packages.get(target) {
+				self.add_package(package);
+				for depend in &package.depends {
+					queue.insert(depend.name.as_str());
 				}
+			// Add virtual targets to the queue to be resolved later.
+			// They may already be provided by an explicitly listed package.
 			} else {
-				eprintln!("Error: unknown package: {}", target);
-				return Err(());
+				queue.insert(target);
 			}
 		}
 
-		Ok(())
+		// Resolve targets in the queue until it is empty.
+		while let Some(target) = pop_first(&mut queue) {
+			// Ignore already-provided targets.
+			// All explicitly listed packages have already been added,
+			// so these are either virtual targets or dependencies.
+			if self.provided_targets.contains(target) {
+				continue;
+			}
+
+			let package = self.resolve_target(target)?;
+			self.add_package(package);
+			for depend in &package.depends {
+				if !self.provided_targets.contains(depend.name.as_str()) {
+					queue.insert(&depend.name);
+				}
+			}
+		}
+
+		Ok(self.selected_packages)
 	}
+
+	/// Add a package to the selection.
+	fn add_package(&mut self, package: &'a DatabasePackage) {
+		self.selected_packages.insert(&package.name);
+		self.provided_targets.insert(&package.name);
+		let provides = package.provides.iter().map(|x| x.name.as_str());
+		self.provided_targets.extend(provides);
+	}
+
+	/// Choose a package for a target.
+	///
+	/// If the target is a concrete package, choose that.
+	/// Otherwise, choose some implementation defined provider, if it exists.
+	fn resolve_target(&self, target: &str) -> Result<&'a DatabasePackage, ()> {
+		if let Some((_repo, package)) = self.packages.get(target) {
+			Ok(package)
+		} else {
+			let provider = self.providers
+				.get(target)
+				.and_then(|x| x.iter().next())
+				.ok_or_else(|| eprintln!("no provider found for target: {}", target))?;
+			self.packages.get(provider)
+				.map(|&(_repo, package)| package)
+				.ok_or_else(|| eprint!("no such package: {}", provider))
+		}
+	}
+}
+
+fn pop_first<T: Copy + Ord>(set: &mut BTreeSet<T>) -> Option<T> {
+	let value = *set.iter().next()?;
+	set.take(&value)
 }
 
 /// Download and extract a database file.
