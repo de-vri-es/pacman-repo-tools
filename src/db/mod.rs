@@ -16,65 +16,104 @@ pub use deserializer::{from_bytes, from_file, from_str, Error as ParseError};
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "UPPERCASE")]
 #[serde(deny_unknown_fields)]
-pub struct DatabasePackageDesc {
+pub struct DatabasePackage {
 	pub filename: String,
+
 	pub name: String,
+
 	pub base: Option<String>,
+
 	pub version: PackageVersion,
+
 	#[serde(rename = "DESC")]
 	pub description: String,
+
 	#[serde(default)]
 	pub groups: Vec<String>,
+
 	#[serde(rename = "CSIZE")]
 	pub compressed_size: usize,
+
 	#[serde(rename = "ISIZE")]
 	pub installed_size: usize,
+
 	pub md5sum: String,
+
 	pub sha256sum: String,
+
 	pub pgpsig: Option<String>,
+
 	pub url: Option<String>,
+
 	#[serde(rename = "LICENSE")]
 	#[serde(default)]
 	pub licenses: Vec<String>,
+
 	pub arch: String,
+
 	#[serde(rename = "BUILDDATE")]
 	pub build_date: usize,
+
 	pub packager: String,
+
 	#[serde(default)]
 	pub replaces: Vec<String>,
+
+	#[serde(default)]
+	pub depends: Vec<Dependency>,
+
+	#[serde(default)]
+	pub conflicts: Vec<Dependency>,
+
+	#[serde(default)]
+	pub provides: Vec<Provides>,
+
+	#[serde(default)]
+	pub optdepends: Vec<OptionalDependency>,
+
+	#[serde(default)]
+	pub makedepends: Vec<Dependency>,
+
+	#[serde(default)]
+	pub checkdepends: Vec<Dependency>,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "UPPERCASE")]
 #[serde(deny_unknown_fields)]
-pub struct DatabasePackageDepends {
+struct DatabasePackageDepends {
 	#[serde(default)]
-	pub depends: Vec<Dependency>,
+	depends: Vec<Dependency>,
 	#[serde(default)]
-	pub conflicts: Vec<Dependency>,
+	conflicts: Vec<Dependency>,
 	#[serde(default)]
-	pub provides: Vec<Provides>,
-	// TODO: Use dedicated type for opt depends that allow for hint why it is needed
+	provides: Vec<Provides>,
 	#[serde(default)]
-	pub optdepends: Vec<OptionalDependency>,
+	optdepends: Vec<OptionalDependency>,
 	#[serde(default)]
-	pub makedepends: Vec<Dependency>,
+	makedepends: Vec<Dependency>,
 	#[serde(default)]
-	pub checkdepends: Vec<Dependency>,
-}
-
-#[derive(Debug)]
-pub struct DatabasePackage {
-	pub desc: DatabasePackageDesc,
-	pub depends: DatabasePackageDepends,
+	checkdepends: Vec<Dependency>,
 }
 
 impl DatabasePackage {
 	pub fn from_directory(path: impl AsRef<Path>) -> Result<Self, ParseError> {
 		let path = path.as_ref();
-		let desc = from_file(path.join("desc"))?;
-		let depends = from_file(path.join("depends"))?;
-		Ok(Self { desc, depends })
+		let mut package: Self = from_file(path.join("desc"))?;
+		let depends_path = path.join("depends");
+		if depends_path.exists() {
+			package.add_depends(from_file(&depends_path)?);
+		}
+		Ok(package)
+	}
+
+	fn add_depends(&mut self, mut other: DatabasePackageDepends) {
+		self.depends.append(&mut other.depends);
+		self.conflicts.append(&mut other.conflicts);
+		self.provides.append(&mut other.provides);
+		self.optdepends.append(&mut other.optdepends);
+		self.makedepends.append(&mut other.makedepends);
+		self.checkdepends.append(&mut other.checkdepends);
 	}
 }
 
@@ -131,7 +170,7 @@ mod test {
 
 	#[test]
 	fn test_parse_package_desc() {
-		let_assert!(Ok(parsed) = from_bytes::<DatabasePackageDesc>(PACKAGE_DESC));
+		let_assert!(Ok(parsed) = from_bytes::<DatabasePackage>(PACKAGE_DESC));
 		assert!(parsed.filename == "linux-aarch64-5.8.9-2-aarch64.pkg.tar.xz");
 		assert!(parsed.name == "linux-aarch64");
 		assert!(parsed.base.as_deref() == Some("linux-aarch64"));
