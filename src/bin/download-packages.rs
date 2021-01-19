@@ -265,18 +265,6 @@ impl<'a, 'b> DependencyResolver<'a, 'b> {
 	}
 }
 
-fn push_entry<K: Ord, V>(map: &mut BTreeMap<K, Vec<V>>, key: K, value: V) {
-	use std::collections::btree_map::Entry;
-	match map.entry(key) {
-		Entry::Vacant(x) => {
-			x.insert(vec![value]);
-		},
-		Entry::Occupied(mut x) => {
-			x.get_mut().push(value);
-		}
-	}
-}
-
 /// Download and extract a database file.
 async fn download_database(directory: &Path, url: reqwest::Url) -> Result<(), ()> {
 	// TODO: Record modified time and/or ETag to avoid downloading without cause.

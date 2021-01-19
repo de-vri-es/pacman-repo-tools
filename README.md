@@ -1,3 +1,3 @@
-# pacman repository management tools
+# Tools for managing pacman repositories
 
-[![Build Status](https://travis-ci.org/de-vri-es/pacman-repo-tools.svg?branch=master)](https://travis-ci.org/de-vri-es/pacman-repo-tools)
+[![tests](https://github.com/de-vri-es/pacman-repo-tools/workflows/tests/badge.svg)](https://github.com/de-vri-es/pacman-repo-tools/actions?query=workflow%3Atests)
