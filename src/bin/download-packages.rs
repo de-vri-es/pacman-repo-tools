@@ -11,40 +11,40 @@ use pacman_repo_tools::db::{read_db_dir, DatabasePackage};
 #[structopt(setting = AppSettings::DeriveDisplayOrder)]
 struct Options {
 	/// Download the package by name.
-	#[structopt(long = "package", short)]
+	#[structopt(long, short)]
 	#[structopt(value_name = "NAME")]
-	packages: Vec<String>,
+	pkg: Vec<String>,
 
 	/// Read packages to download from a file, one package name per line.
-	#[structopt(long = "package-file", short = "f")]
+	#[structopt(long , short = "f")]
 	#[structopt(value_name = "PATH")]
-	package_files: Vec<PathBuf>,
+	pkg_file: Vec<PathBuf>,
 
 	/// Download all dependencies too.
-	#[structopt(long, short)]
-	dependencies: bool,
+	#[structopt(long)]
+	no_deps: bool,
 
 	/// A repository to download packages from (specify the URL for the database archive).
-	#[structopt(long = "database", short = "r")]
-	#[structopt(value_name = "URL.db.tar.*")]
-	databases: Vec<String>,
+	#[structopt(long)]
+	#[structopt(value_name = "URL.db")]
+	db_url: Vec<String>,
 
 	/// Read repository database URLs from a file, one database URL per line.
-	#[structopt(long = "database-file")]
+	#[structopt(long, short)]
 	#[structopt(value_name = "PATH")]
-	database_files: Vec<PathBuf>,
+	db_file: Vec<PathBuf>,
 
 	/// Download packages to this folder.
 	#[structopt(long)]
 	#[structopt(value_name = "DIRECTORY")]
 	#[structopt(default_value = "packages")]
-	package_dir: PathBuf,
+	pkg_dir: PathBuf,
 
 	/// Download repository databases to this folder.
 	#[structopt(long)]
 	#[structopt(value_name = "DIRECTORY")]
 	#[structopt(default_value = "db")]
-	database_dir: PathBuf,
+	db_dir: PathBuf,
 }
 
 fn main() {
@@ -64,8 +64,8 @@ fn main() {
 }
 
 async fn do_main(options: Options) -> Result<(), ()> {
-	let targets = read_files_to_vec(options.packages, &options.package_files)?;
-	let databases = read_files_to_vec(options.databases, &options.database_files)?;
+	let targets = read_files_to_vec(options.pkg, &options.pkg_file)?;
+	let databases = read_files_to_vec(options.db_url, &options.db_file)?;
 
 	if targets.is_empty() {
 		eprintln!("Error: need atleast one package to download");
@@ -77,14 +77,14 @@ async fn do_main(options: Options) -> Result<(), ()> {
 		return Err(());
 	}
 
-	let repositories = sync_dbs(&options.database_dir, &databases).await?;
+	let repositories = sync_dbs(&options.db_dir, &databases).await?;
 	let packages = index_packages_by_name(&repositories);
 
-	let targets = if options.dependencies {
+	let targets = if options.no_deps {
+		targets.iter().map(String::as_str).collect()
+	} else {
 		let resolver = DependencyResolver::new(&packages);
 		resolver.resolve(&targets)?
-	} else {
-		targets.iter().map(String::as_str).collect()
 	};
 
 	eprintln!("Packages to download: {:?}", targets);
