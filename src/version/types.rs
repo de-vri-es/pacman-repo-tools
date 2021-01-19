@@ -73,10 +73,12 @@ impl std::str::FromStr for Version {
 			(version, None)
 		};
 
+		// TODO: this is disabled because makepkg generates invalid versions for .so provides under some conditions.
+		// TODO: re-enable when makepkg and the real databases are fixed.
 		// Check the pkgver for invalid characters.
-		if pkgver.chars().any(|c| !c.is_ascii() || c.is_ascii_whitespace() || c == '/' || c == ':' || c == '-') {
-			return Err(VersionFromStrError::InvalidPkgver);
-		}
+		// if pkgver.chars().any(|c| !c.is_ascii() || c.is_ascii_whitespace() || c == '/' || c == ':' || c == '-') {
+		// 	return Err(VersionFromStrError::InvalidPkgver);
+		// }
 
 		// Check the pkgrel for invalid characters.
 		if let Some(pkgrel) = pkgrel {
@@ -278,7 +280,8 @@ mod test {
 		assert!(parse("5:1.2.3-4") == Ok(PackageVersion::new(5, "1.2.3", "4")));
 
 		assert!(parse("aap:1.2.3-4") == Err(PackageVersionFromStrError::InvalidEpoch));
-		assert!(parse("aap-noot-1") == Err(PackageVersionFromStrError::InvalidPkgver));
+		// TODO: checking pkgver was disabled to work around makepkg bug
+		// assert!(parse("aap-noot-1") == Err(PackageVersionFromStrError::InvalidPkgver));
 		assert!(parse("1.2.3-foo") == Err(PackageVersionFromStrError::InvalidPkgrel));
 		assert!(parse("1.2.3") == Err(PackageVersionFromStrError::MissingPkgRel));
 	}
