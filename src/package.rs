@@ -13,6 +13,13 @@ pub struct Dependency {
 	pub version: Option<VersionConstraint>,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct OptionalDependency {
+	pub name: String,
+	pub version: Option<VersionConstraint>,
+	pub description: String,
+}
+
 /// A version constraint operator.
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum Constraint {
@@ -101,6 +108,16 @@ impl Dependency {
 	}
 }
 
+impl OptionalDependency {
+	pub fn new(name: impl Into<String>, version: Option<VersionConstraint>, description: impl Into<String>) -> Self {
+		Self {
+			name: name.into(),
+			version,
+			description: description.into(),
+		}
+	}
+}
+
 impl std::str::FromStr for Provides {
 	// TODO: also check for invalid package names
 	type Err = VersionFromStrError;
@@ -144,25 +161,45 @@ impl std::str::FromStr for Dependency {
 	}
 }
 
+impl std::str::FromStr for OptionalDependency {
+	// TODO: also check for invalid package names and version constraints.
+	type Err = VersionFromStrError;
+
+	fn from_str(input: &str) -> Result<Self, Self::Err> {
+		let (depends, description) = match input.find(": ") {
+			Some(i) => (&input[..i], &input[i+2..]),
+			None => (input, ""),
+		};
+
+		let Dependency { name, version } = depends.parse()?;
+
+		Ok(Self {
+			name,
+			version,
+			description: description.into(),
+		})
+	}
+}
+
 /// Check if a character is part of a version constraint operator.
 fn is_constraint_char(c: char) -> bool {
 	c == '>' || c == '<' || c == '='
 }
 
 /// Parse a version constraint.
-fn parse_constraint(contraint: &str) -> Option<(Constraint, &str)> {
-	if let Some(version) = contraint.strip_prefix(">=") {
+fn parse_constraint(input: &str) -> Option<(Constraint, &str)> {
+	if let Some(version) = input.strip_prefix(">=") {
 		Some((Constraint::GreaterEqual, version))
-	} else if let Some(version) = contraint.strip_prefix("<=") {
+	} else if let Some(version) = input.strip_prefix("<=") {
 		Some((Constraint::LessEqual, version))
-	} else if let Some(version) = contraint.strip_prefix(">") {
+	} else if let Some(version) = input.strip_prefix(">") {
 		Some((Constraint::Greater, version))
-	} else if let Some(version) = contraint.strip_prefix("<") {
+	} else if let Some(version) = input.strip_prefix("<") {
 		Some((Constraint::Less, version))
-	} else if let Some(version) = contraint.strip_prefix("==") {
+	} else if let Some(version) = input.strip_prefix("==") {
 		// Shame on you, packagers.
 		Some((Constraint::Equal, version))
-	} else if let Some(version) = contraint.strip_prefix("=") {
+	} else if let Some(version) = input.strip_prefix("=") {
 		Some((Constraint::Equal, version))
 	} else {
 		None
@@ -200,6 +237,25 @@ impl<'de> serde::Deserialize<'de> for Dependency {
 
 			fn visit_str<E: serde::de::Error>(self, value: &str) -> Result<Self::Value, E> {
 				value.parse().map_err(|e| E::custom(format_args!("invalid version in dependency declaration: {}", e)))
+			}
+		}
+
+		deserializer.deserialize_str(Visitor)
+	}
+}
+
+impl<'de> serde::Deserialize<'de> for OptionalDependency {
+	fn deserialize<D: serde::de::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+		struct Visitor;
+		impl<'de> serde::de::Visitor<'de> for Visitor {
+			type Value = OptionalDependency;
+
+			fn expecting(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+				write!(f, "an optional dependency name with optional version constraint and optional description")
+			}
+
+			fn visit_str<E: serde::de::Error>(self, value: &str) -> Result<Self::Value, E> {
+				value.parse().map_err(|e| E::custom(format_args!("invalid version in optional dependency declaration: {}", e)))
 			}
 		}
 

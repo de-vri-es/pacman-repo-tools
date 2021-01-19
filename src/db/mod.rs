@@ -7,7 +7,7 @@ use serde::Deserialize;
 use std::path::{Path, PathBuf};
 
 use crate::version::PackageVersion;
-use crate::package::{Dependency, Provides};
+use crate::package::{Dependency, OptionalDependency, Provides};
 
 mod deserializer;
 
@@ -61,7 +61,7 @@ pub struct DatabasePackageDepends {
 	pub provides: Vec<Provides>,
 	// TODO: Use dedicated type for opt depends that allow for hint why it is needed
 	#[serde(default)]
-	pub optdepends: Vec<Dependency>,
+	pub optdepends: Vec<OptionalDependency>,
 	#[serde(default)]
 	pub makedepends: Vec<Dependency>,
 	#[serde(default)]
@@ -174,7 +174,7 @@ mod test {
 			Provides::unversioned("WIREGUARD-MODULE"),
 		]);
 		assert!(parsed.optdepends == vec![
-			Dependency::unconstrained("crda: to set the correct wireless channels of your country"),
+			OptionalDependency::new("crda", None, "to set the correct wireless channels of your country"),
 		]);
 		assert!(parsed.makedepends == vec![]);
 		assert!(parsed.checkdepends == vec![]);
