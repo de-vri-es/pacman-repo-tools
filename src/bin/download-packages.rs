@@ -335,6 +335,6 @@ fn remove_dir_all(path: impl AsRef<Path>) -> Result<(), ()> {
 
 /// Download a file over HTTP(S).
 async fn download_file(url: reqwest::Url) -> Result<Vec<u8>, reqwest::Error> {
-	let response = reqwest::get(url.clone()).await?.bytes().await?.to_vec();
-	Ok(response)
+	let response = reqwest::get(url.clone()).await?.error_for_status()?;
+	Ok(response.bytes().await?.to_vec())
 }
