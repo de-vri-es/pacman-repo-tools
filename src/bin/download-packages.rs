@@ -122,6 +122,7 @@ fn read_files_to_vec(initial: Vec<String>, paths: &[impl AsRef<Path>]) -> Result
 	Ok(result)
 }
 
+/// Metadata about a repository.
 struct Repository {
 	name: String,
 	db_url: reqwest::Url,
@@ -179,6 +180,10 @@ async fn sync_dbs<'a>(directory: impl AsRef<Path>, repositories: &'a [Repository
 	Ok(repo_packages)
 }
 
+/// Index packages from different repositories by name.
+///
+/// If multiple packages from  different repositories contain packages with the same name,
+/// only the package from the first repository is used.
 fn index_packages_by_name<'a>(packages: &'a [(&'a Repository, Vec<DatabasePackage>)]) -> BTreeMap<&'a str, (&'a Repository, &'a DatabasePackage)> {
 	use std::collections::btree_map::Entry;
 
@@ -215,6 +220,7 @@ fn index_providers<'a>(packages: &BTreeMap<&'a str, (&'a Repository, &'a Databas
 	index
 }
 
+/// Recursive dependency resolver.
 struct DependencyResolver<'a, 'b> {
 	packages: &'b BTreeMap<&'a str, (&'a Repository, &'a DatabasePackage)>,
 	providers: BTreeMap<&'a str, BTreeSet<&'a str>>,
@@ -223,6 +229,7 @@ struct DependencyResolver<'a, 'b> {
 }
 
 impl<'a, 'b> DependencyResolver<'a, 'b> {
+	/// Create a new dependency resolver.
 	pub fn new(packages: &'b BTreeMap<&'a str, (&'a Repository, &'a DatabasePackage)>) -> Self {
 		Self {
 			packages,
@@ -232,6 +239,12 @@ impl<'a, 'b> DependencyResolver<'a, 'b> {
 		}
 	}
 
+	/// Resolve the targets into a set of packages to download.
+	///
+	/// This will recursively resolve all dependencies and virtual targets.
+	///
+	/// Dependencies and virtual targets that are already provided by a selected package are skipped.
+	/// Howwever, all real packages given in `targets` will be selected.
 	pub fn resolve(mut self, targets: &[impl AsRef<str>]) -> Result<BTreeSet<&'a str>, ()> {
 		let mut queue = BTreeSet::new();
 
@@ -300,6 +313,7 @@ impl<'a, 'b> DependencyResolver<'a, 'b> {
 	}
 }
 
+/// Pop the first entry from a BTreeSet.
 fn pop_first<T: Copy + Ord>(set: &mut BTreeSet<T>) -> Option<T> {
 	let value = *set.iter().next()?;
 	set.take(&value)
