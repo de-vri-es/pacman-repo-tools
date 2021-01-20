@@ -80,8 +80,10 @@ async fn do_main(options: Options) -> Result<(), ()> {
 
 	let repositories = Repository::parse_urls(&databases)?;
 
+	let http_client = reqwest::Client::new();
+
 	eprintln!("Syncing repository databases");
-	let packages = sync_dbs(&options.db_dir, &repositories).await?;
+	let packages = sync_dbs(&http_client, &options.db_dir, &repositories).await?;
 	let packages = index_packages_by_name(&packages);
 
 	let selected_packages = if options.no_deps {
@@ -92,7 +94,7 @@ async fn do_main(options: Options) -> Result<(), ()> {
 	};
 
 	eprintln!("Downloading packages");
-	download_packages(&options.pkg_dir, &selected_packages, &packages).await?;
+	download_packages(&http_client, &options.pkg_dir, &selected_packages, &packages).await?;
 
 	Ok(())
 }
@@ -164,14 +166,14 @@ impl std::str::FromStr for Repository {
 }
 
 /// Download and extract the given database files specified by the URLs to the given directory.
-async fn sync_dbs<'a>(directory: impl AsRef<Path>, repositories: &'a [Repository]) -> Result<Vec<(&'a Repository, Vec<DatabasePackage>)>, ()> {
+async fn sync_dbs<'a>(http_client: &reqwest::Client, directory: impl AsRef<Path>, repositories: &'a [Repository]) -> Result<Vec<(&'a Repository, Vec<DatabasePackage>)>, ()> {
 	let directory = directory.as_ref();
 
 	let mut repo_packages = Vec::new();
 
 	for repo in repositories {
 		let db_dir = directory.join(&repo.name);
-		download_database(&db_dir, &repo.db_url).await?;
+		download_database(http_client, &db_dir, &repo.db_url).await?;
 
 		let packages = read_db_dir(&db_dir).map_err(|e| eprintln!("Error: {}", e))?;
 		repo_packages.push((repo, packages));
@@ -320,16 +322,31 @@ fn pop_first<T: Copy + Ord>(set: &mut BTreeSet<T>) -> Option<T> {
 }
 
 /// Download and extract a database file.
-async fn download_database(directory: &Path, url: &reqwest::Url) -> Result<(), ()> {
-	// TODO: Record modified time and/or ETag to avoid downloading without cause.
+async fn download_database(http_client: &reqwest::Client, directory: &Path, url: &reqwest::Url) -> Result<(), ()> {
 	eprintln!("Downloading {}", url);
-	let database = download_file(&url).await.map_err(|e| eprintln!("Error: {}", e))?;
-	extract_archive(&directory, &database).await?;
+	let last_modified_path = directory.join("last-modified");
+	let etag_path = directory.join("etag");
+	let last_modified = std::fs::read_to_string(&last_modified_path).ok();
+	let etag = std::fs::read_to_string(&etag_path).ok();
+
+	let download = maybe_download(http_client, &url, last_modified.as_deref(), etag.as_deref()).await.map_err(|e| eprintln!("Error: {}", e))?;
+	if let Some(download) = download {
+		let _: Result<_, _> = std::fs::remove_file(&last_modified_path);
+		let _: Result<_, _> = std::fs::remove_file(&etag_path);
+		extract_archive(&directory, &download.data).await?;
+		if let Some(last_modified) = download.last_modified {
+			let _: Result<_, _> = std::fs::write(&last_modified_path, last_modified);
+		}
+		if let Some(etag) = download.etag {
+			let _: Result<_, _> = std::fs::write(&etag_path, etag);
+		}
+	}
 	Ok(())
 }
 
 /// Download all packages.
 async fn download_packages(
+	http_client: &reqwest::Client,
 	directory: &impl AsRef<Path>,
 	selected: &BTreeSet<&str>,
 	packages: &BTreeMap<&str, (&Repository, &DatabasePackage)>,
@@ -339,13 +356,13 @@ async fn download_packages(
 		let (repository, package) = packages
 			.get(pkg_name)
 			.expect(&format!("selected package list contains unknown package: {}", pkg_name));
-		download_package(directory, repository, package).await?;
+		download_package(http_client, directory, repository, package).await?;
 	}
 	Ok(())
 }
 
 /// Download a single package, if required.
-async fn download_package(directory: impl AsRef<Path>, repository: &Repository, package: &DatabasePackage) -> Result<(), ()> {
+async fn download_package(http_client: &reqwest::Client, directory: impl AsRef<Path>, repository: &Repository, package: &DatabasePackage) -> Result<(), ()> {
 	use std::io::Write;
 	let directory = directory.as_ref();
 	make_dirs(directory)?;
@@ -364,7 +381,7 @@ async fn download_package(directory: impl AsRef<Path>, repository: &Repository, 
 
 	let mut file = std::fs::File::create(&pkg_path).map_err(|e| eprintln!("Error: failed to open {} for writing: {}", pkg_path.display(), e))?;
 	eprintln!("Downloading {}", package.filename);
-	let data = download_file(&pkg_url).await.map_err(|e| eprintln!("Error: {}", e))?;
+	let data = download(http_client, &pkg_url).await.map_err(|e| eprintln!("Error: {}", e))?;
 	file.write_all(&data)
 		.map_err(|e| eprintln!("Error: failed to write to {}: {}", pkg_path.display(), e))?;
 	Ok(())
@@ -380,10 +397,48 @@ fn package_url(repository: &Repository, package: &DatabasePackage) -> reqwest::U
 	pkg_url
 }
 
+struct Download {
+	data: Vec<u8>,
+	last_modified: Option<String>,
+	etag: Option<String>,
+}
+
 /// Download a file over HTTP(S).
-async fn download_file(url: &reqwest::Url) -> Result<Vec<u8>, reqwest::Error> {
-	let response = reqwest::get(url.clone()).await?.error_for_status()?;
+async fn download(client: &reqwest::Client, url: &reqwest::Url) -> Result<Vec<u8>, reqwest::Error> {
+	let response = client.get(url.clone()).send().await?.error_for_status()?;
 	Ok(response.bytes().await?.to_vec())
+}
+
+/// Download a file over HTTP(S).
+async fn maybe_download(client: &reqwest::Client, url: &reqwest::Url, last_modified: Option<&str>, etag: Option<&str>) -> Result<Option<Download>, reqwest::Error> {
+	let mut request = client.get(url.clone());
+	if let Some(last_modified) = last_modified {
+		request = request.header("If-Modified-Since", last_modified);
+	}
+	if let Some(etag) = etag {
+		request = request.header("If-None-Match", etag);
+	}
+
+	let response = request.send().await?.error_for_status()?;
+	if response.status() == reqwest::StatusCode::NOT_MODIFIED {
+		return Ok(None);
+	}
+
+	let last_modified = get_string_header(response.headers(), "Last-Modified");
+	let etag = get_string_header(response.headers(), "ETag");
+	let data = response.bytes().await?.to_vec();
+	Ok(Some(Download {
+		data,
+		last_modified,
+		etag,
+	}))
+}
+
+/// Get the value of a header as string.
+///
+/// If the header is not present or not a valid string, this returns `None`.
+fn get_string_header(headers: &reqwest::header::HeaderMap, name: impl reqwest::header::AsHeaderName) -> Option<String> {
+	Some(headers.get(name)?.to_str().ok()?.to_owned())
 }
 
 /// Create a directory and all parent directories as needed.
