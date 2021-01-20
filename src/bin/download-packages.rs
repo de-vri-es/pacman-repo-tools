@@ -4,16 +4,9 @@ use structopt::clap::AppSettings;
 use structopt::StructOpt;
 
 use pacman_repo_tools::db::{read_db_dir, DatabasePackage};
+use pacman_repo_tools::msg::{use_color, Paint};
 use pacman_repo_tools::parse::rpartition;
-use pacman_repo_tools::msg::{Paint, use_color};
-use pacman_repo_tools::{
-	error,
-	msg,
-	plain,
-	plain_no_eol,
-	warning,
-};
-
+use pacman_repo_tools::{error, msg, plain, plain_no_eol, warning};
 
 #[derive(StructOpt)]
 #[structopt(setting = AppSettings::ColoredHelp)]
@@ -179,7 +172,11 @@ impl std::str::FromStr for Repository {
 }
 
 /// Download and extract the given database files specified by the URLs to the given directory.
-async fn sync_dbs<'a>(http_client: &reqwest::Client, directory: impl AsRef<Path>, repositories: &'a [Repository]) -> Result<Vec<(&'a Repository, Vec<DatabasePackage>)>, ()> {
+async fn sync_dbs<'a>(
+	http_client: &reqwest::Client,
+	directory: impl AsRef<Path>,
+	repositories: &'a [Repository],
+) -> Result<Vec<(&'a Repository, Vec<DatabasePackage>)>, ()> {
 	let directory = directory.as_ref();
 
 	let mut repo_packages = Vec::new();
@@ -210,7 +207,9 @@ fn index_packages_by_name<'a>(packages: &'a [(&'a Repository, Vec<DatabasePackag
 					let (prev_repo, _) = x.get();
 					warning!(
 						"Package {} already encountered in {}, ignoring package from {}.",
-						package.name, prev_repo.name, repo.name
+						package.name,
+						prev_repo.name,
+						repo.name
 					);
 				},
 				Entry::Vacant(entry) => {
@@ -384,7 +383,12 @@ async fn download_packages(
 }
 
 /// Download a single package, if required.
-async fn download_package(http_client: &reqwest::Client, directory: impl AsRef<Path>, repository: &Repository, package: &DatabasePackage) -> Result<(), ()> {
+async fn download_package(
+	http_client: &reqwest::Client,
+	directory: impl AsRef<Path>,
+	repository: &Repository,
+	package: &DatabasePackage,
+) -> Result<(), ()> {
 	use std::io::Write;
 	let directory = directory.as_ref();
 	make_dirs(directory)?;
@@ -398,18 +402,18 @@ async fn download_package(http_client: &reqwest::Client, directory: impl AsRef<P
 			warning!("SHA256 checksum of {} does not match, re-downloading package.", package.filename);
 		} else {
 			plain!("Downloading {}... {}", Paint::cyan(&package.name), Paint::yellow("up to date"));
-			return Ok(())
+			return Ok(());
 		}
 	}
 
 	plain_no_eol!("Downloading {}...", Paint::cyan(&package.name));
 	let mut file = std::fs::File::create(&pkg_path).map_err(|e| {
-			println!(" {}", Paint::red("failed"));
-			error!("Failed to open {} for writing: {}.", pkg_path.display(), e);
-		})?;
+		println!(" {}", Paint::red("failed"));
+		error!("Failed to open {} for writing: {}.", pkg_path.display(), e);
+	})?;
 	let data = download(http_client, &pkg_url).await.map_err(|e| {
-			println!(" {}", Paint::red("failed"));
-			error!("{}.", e);
+		println!(" {}", Paint::red("failed"));
+		error!("{}.", e);
 	})?;
 	file.write_all(&data).map_err(|e| {
 		println!(" {}", Paint::red("failed"));
@@ -442,7 +446,12 @@ async fn download(client: &reqwest::Client, url: &reqwest::Url) -> Result<Vec<u8
 }
 
 /// Download a file over HTTP(S).
-async fn maybe_download(client: &reqwest::Client, url: &reqwest::Url, last_modified: Option<&str>, etag: Option<&str>) -> Result<Option<Download>, reqwest::Error> {
+async fn maybe_download(
+	client: &reqwest::Client,
+	url: &reqwest::Url,
+	last_modified: Option<&str>,
+	etag: Option<&str>,
+) -> Result<Option<Download>, reqwest::Error> {
 	let mut request = client.get(url.clone());
 	if let Some(last_modified) = last_modified {
 		request = request.header("If-Modified-Since", last_modified);
@@ -459,11 +468,7 @@ async fn maybe_download(client: &reqwest::Client, url: &reqwest::Url, last_modif
 	let last_modified = get_string_header(response.headers(), "Last-Modified");
 	let etag = get_string_header(response.headers(), "ETag");
 	let data = response.bytes().await?.to_vec();
-	Ok(Some(Download {
-		data,
-		last_modified,
-		etag,
-	}))
+	Ok(Some(Download { data, last_modified, etag }))
 }
 
 /// Get the value of a header as string.
@@ -550,10 +555,7 @@ async fn extract_archive(directory: &Path, data: &[u8]) -> Result<(), ()> {
 	drop(stdin);
 
 	// Wait for bsdtar to finish.
-	let exit_status = process
-		.wait()
-		.await
-		.map_err(|e| error!("Failed to wait for bsdtar to exit: {}.", e))?;
+	let exit_status = process.wait().await.map_err(|e| error!("Failed to wait for bsdtar to exit: {}.", e))?;
 
 	// Check the exit status.
 	if exit_status.success() {
