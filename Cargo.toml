@@ -8,11 +8,13 @@ authors     = ["Maarten de Vries <maarten@de-vri.es>"]
 edition     = "2018"
 
 [dependencies]
+atty = "0.2.14"
 reqwest = "0.11.0"
 serde = { version = "1.0.119", features = ["derive"] }
 sha2 = "0.9.2"
 structopt = "0.3.21"
 tokio = { version = "1.0.1", features = ["rt", "process", "io-util"] }
+yansi = "0.5.0"
 
 [dev-dependencies]
 assert2 = "0.3.3"

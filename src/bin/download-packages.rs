@@ -5,6 +5,15 @@ use structopt::StructOpt;
 
 use pacman_repo_tools::db::{read_db_dir, DatabasePackage};
 use pacman_repo_tools::parse::rpartition;
+use pacman_repo_tools::msg::{Paint, use_color};
+use pacman_repo_tools::{
+	error,
+	msg,
+	plain,
+	plain_no_eol,
+	warning,
+};
+
 
 #[derive(StructOpt)]
 #[structopt(setting = AppSettings::ColoredHelp)]
@@ -49,11 +58,15 @@ struct Options {
 }
 
 fn main() {
+	if !use_color() {
+		Paint::disable();
+	}
+
 	let runtime = tokio::runtime::Builder::new_current_thread().enable_all().build();
 	let runtime = match runtime {
 		Ok(x) => x,
 		Err(e) => {
-			eprintln!("Error: failed to initialize tokio runtime: {}", e);
+			error!("Failed to initialize tokio runtime: {}.", e);
 			std::process::exit(1);
 		},
 	};
@@ -69,12 +82,12 @@ async fn do_main(options: Options) -> Result<(), ()> {
 	let databases = read_files_to_vec(options.db_url, &options.db_file)?;
 
 	if targets.is_empty() {
-		eprintln!("Error: need atleast one package to download");
+		error!("Need atleast one package to download.");
 		return Err(());
 	}
 
 	if databases.is_empty() {
-		eprintln!("Error: need atleast one repository database");
+		error!("Need atleast one repository database.");
 		return Err(());
 	}
 
@@ -82,7 +95,7 @@ async fn do_main(options: Options) -> Result<(), ()> {
 
 	let http_client = reqwest::Client::new();
 
-	eprintln!("Syncing repository databases");
+	msg!("Syncing repository databases");
 	let packages = sync_dbs(&http_client, &options.db_dir, &repositories).await?;
 	let packages = index_packages_by_name(&packages);
 
@@ -93,7 +106,7 @@ async fn do_main(options: Options) -> Result<(), ()> {
 		resolver.resolve(&targets)?
 	};
 
-	eprintln!("Downloading packages");
+	msg!("Downloading packages");
 	download_packages(&http_client, &options.pkg_dir, &selected_packages, &packages).await?;
 
 	Ok(())
@@ -108,8 +121,8 @@ fn read_files_to_vec(initial: Vec<String>, paths: &[impl AsRef<Path>]) -> Result
 
 	for path in paths {
 		let path = path.as_ref();
-		let buffer = std::fs::read(&path).map_err(|e| eprintln!("Error: failed to read {}: {}", path.display(), e))?;
-		let buffer = String::from_utf8(buffer).map_err(|e| eprintln!("Error: invalid UTF-8 in {}: {}", path.display(), e))?;
+		let buffer = std::fs::read(&path).map_err(|e| error!("Failed to read {}: {}.", path.display(), e))?;
+		let buffer = String::from_utf8(buffer).map_err(|e| error!("Invalid UTF-8 in {}: {}.", path.display(), e))?;
 
 		result.extend(buffer.lines().filter_map(|line| {
 			let line = line.trim();
@@ -141,7 +154,7 @@ impl Repository {
 		for url in urls {
 			let repository: Repository = url.as_ref().parse()?;
 			if !names.insert(repository.name.clone()) {
-				eprintln!("Error: duplicate repository name: {}", repository.name);
+				error!("Duplicate repository name: {}.", repository.name);
 				return Err(());
 			}
 			repositories.push(repository);
@@ -155,10 +168,10 @@ impl std::str::FromStr for Repository {
 	type Err = ();
 
 	fn from_str(input: &str) -> Result<Self, Self::Err> {
-		let db_url: reqwest::Url = input.parse().map_err(|e| eprintln!("Error: invalid URL: {}: {}", input, e))?;
+		let db_url: reqwest::Url = input.parse().map_err(|e| error!("Invalid URL: {}: {}.", input, e))?;
 		let name = rpartition(db_url.path(), '/').map(|(_, name)| name).unwrap_or(db_url.path());
 		if name.is_empty() {
-			eprintln!("Error: can not determine repository name from URL: {}", input);
+			error!("Can not determine repository name from URL: {}.", input);
 			return Err(());
 		}
 		Ok(Self { name: name.into(), db_url })
@@ -175,7 +188,7 @@ async fn sync_dbs<'a>(http_client: &reqwest::Client, directory: impl AsRef<Path>
 		let db_dir = directory.join(&repo.name);
 		download_database(http_client, &db_dir, &repo.db_url).await?;
 
-		let packages = read_db_dir(&db_dir).map_err(|e| eprintln!("Error: {}", e))?;
+		let packages = read_db_dir(&db_dir).map_err(|e| error!("{}.", e))?;
 		repo_packages.push((repo, packages));
 	}
 
@@ -195,8 +208,8 @@ fn index_packages_by_name<'a>(packages: &'a [(&'a Repository, Vec<DatabasePackag
 			match index.entry(package.name.as_str()) {
 				Entry::Occupied(x) => {
 					let (prev_repo, _) = x.get();
-					eprintln!(
-						"Warning: package {} already encountered in {} repository, ignoring package from {} repository",
+					warning!(
+						"Package {} already encountered in {}, ignoring package from {}.",
 						package.name, prev_repo.name, repo.name
 					);
 				},
@@ -306,11 +319,11 @@ impl<'a, 'b> DependencyResolver<'a, 'b> {
 				.providers
 				.get(target)
 				.and_then(|x| x.iter().next())
-				.ok_or_else(|| eprintln!("no provider found for target: {}", target))?;
+				.ok_or_else(|| error!("No provider found for target: {}.", target))?;
 			self.packages
 				.get(provider)
 				.map(|&(_repo, package)| package)
-				.ok_or_else(|| eprint!("no such package: {}", provider))
+				.ok_or_else(|| error!("No such package: {}.", provider))
 		}
 	}
 }
@@ -323,7 +336,7 @@ fn pop_first<T: Copy + Ord>(set: &mut BTreeSet<T>) -> Option<T> {
 
 /// Download and extract a database file.
 async fn download_database(http_client: &reqwest::Client, directory: &Path, url: &reqwest::Url) -> Result<(), ()> {
-	eprint!("Downloading {}...", url);
+	plain_no_eol!("Downloading {}...", Paint::cyan(url));
 	let last_modified_path = directory.join("last-modified");
 	let etag_path = directory.join("etag");
 	let last_modified = std::fs::read_to_string(&last_modified_path).ok();
@@ -331,10 +344,13 @@ async fn download_database(http_client: &reqwest::Client, directory: &Path, url:
 
 	let download = maybe_download(http_client, &url, last_modified.as_deref(), etag.as_deref())
 		.await
-		.map_err(|e| eprintln!(" failed\nError: {}", e))?;
+		.map_err(|e| {
+			println!(" {}", Paint::red("failed"));
+			error!("{}.", e);
+		})?;
 
 	if let Some(download) = download {
-		eprintln!(" OK");
+		println!(" {}", Paint::green("done"));
 		let _: Result<_, _> = std::fs::remove_file(&last_modified_path);
 		let _: Result<_, _> = std::fs::remove_file(&etag_path);
 		extract_archive(&directory, &download.data).await?;
@@ -345,7 +361,7 @@ async fn download_database(http_client: &reqwest::Client, directory: &Path, url:
 			let _: Result<_, _> = std::fs::write(&etag_path, etag);
 		}
 	} else {
-		eprintln!(" up to date");
+		println!(" {}", Paint::yellow("up to date"));
 	}
 	Ok(())
 }
@@ -377,24 +393,29 @@ async fn download_package(http_client: &reqwest::Client, directory: impl AsRef<P
 	let pkg_path = directory.join(&package.filename);
 	if let Some(metadata) = stat(&pkg_path)? {
 		if metadata.len() != package.compressed_size {
-			eprintln!("Warning: file size of {} does not match, re-downloading package", package.filename);
+			warning!("File size of {} does not match, re-downloading package.", package.filename);
 		} else if !file_sha256(&pkg_path)?.eq_ignore_ascii_case(&package.sha256sum) {
-			eprintln!("Warning: sha256 checksum of {} does not match, re-downloading package", package.filename);
+			warning!("SHA256 checksum of {} does not match, re-downloading package.", package.filename);
 		} else {
-			eprintln!("Downloading {}... up to date", package.filename);
+			plain!("Downloading {}... {}", Paint::cyan(&package.name), Paint::yellow("up to date"));
 			return Ok(())
 		}
 	}
 
-	eprint!("Downloading {}...", package.filename);
-	let mut file = std::fs::File::create(&pkg_path)
-		.map_err(|e| eprintln!(" failed\nError: failed to open {} for writing: {}", pkg_path.display(), e))?;
-	let data = download(http_client, &pkg_url)
-		.await
-		.map_err(|e| eprintln!(" failed\nError: {}", e))?;
-	file.write_all(&data)
-		.map_err(|e| eprintln!(" failed\nError: failed to write to {}: {}", pkg_path.display(), e))?;
-	eprintln!(" OK");
+	plain_no_eol!("Downloading {}...", Paint::cyan(&package.name));
+	let mut file = std::fs::File::create(&pkg_path).map_err(|e| {
+			println!(" {}", Paint::red("failed"));
+			error!("Failed to open {} for writing: {}.", pkg_path.display(), e);
+		})?;
+	let data = download(http_client, &pkg_url).await.map_err(|e| {
+			println!(" {}", Paint::red("failed"));
+			error!("{}.", e);
+	})?;
+	file.write_all(&data).map_err(|e| {
+		println!(" {}", Paint::red("failed"));
+		error!("Failed to write to {}: {}.", pkg_path.display(), e);
+	})?;
+	println!(" {}", Paint::green("done"));
 	Ok(())
 }
 
@@ -455,7 +476,7 @@ fn get_string_header(headers: &reqwest::header::HeaderMap, name: impl reqwest::h
 /// Create a directory and all parent directories as needed.
 fn make_dirs(path: impl AsRef<Path>) -> Result<(), ()> {
 	let path = path.as_ref();
-	std::fs::create_dir_all(path).map_err(|e| eprintln!("Error: failed to create directory {}: {}", path.display(), e))
+	std::fs::create_dir_all(path).map_err(|e| error!("Failed to create directory {}: {}.", path.display(), e))
 }
 
 /// Recursively remove a directory and it's content.
@@ -465,7 +486,7 @@ fn remove_dir_all(path: impl AsRef<Path>) -> Result<(), ()> {
 		Ok(()) => Ok(()),
 		Err(ref e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
 		Err(e) => {
-			eprintln!("Error: failed to remove directory {} or it's content: {}", path.display(), e);
+			error!("Failed to remove directory {} or it's content: {}.", path.display(), e);
 			Err(())
 		},
 	}
@@ -482,7 +503,7 @@ fn stat(path: impl AsRef<Path>) -> Result<Option<std::fs::Metadata>, ()> {
 			if e.kind() == std::io::ErrorKind::NotFound {
 				Ok(None)
 			} else {
-				eprintln!("Error: failed to stat {}: {}", path.display(), e);
+				error!("Failed to stat {}: {}.", path.display(), e);
 				Err(())
 			}
 		},
@@ -495,7 +516,7 @@ fn stat(path: impl AsRef<Path>) -> Result<Option<std::fs::Metadata>, ()> {
 fn file_sha256(path: impl AsRef<Path>) -> Result<String, ()> {
 	use sha2::Digest;
 	let path = path.as_ref();
-	let data = std::fs::read(path).map_err(|e| eprintln!("Error: failed to read {}: {}", path.display(), e))?;
+	let data = std::fs::read(path).map_err(|e| error!("Failed to read {}: {}.", path.display(), e))?;
 	let digest = sha2::Sha256::digest(&data);
 	let mut hex = String::with_capacity(256 / 8 * 2);
 	for byte in digest {
@@ -518,27 +539,27 @@ async fn extract_archive(directory: &Path, data: &[u8]) -> Result<(), ()> {
 		.current_dir(directory)
 		.stdin(std::process::Stdio::piped())
 		.spawn()
-		.map_err(|e| eprintln!("Error: failed to run bsdtar: {}", e))?;
+		.map_err(|e| error!("Failed to run bsdtar: {}.", e))?;
 
 	// Write archive to standard input of bsdtar.
-	let mut stdin = process.stdin.take().ok_or_else(|| eprintln!("Error: failed to get stdin for bsdtar"))?;
+	let mut stdin = process.stdin.take().ok_or_else(|| error!("Failed to get stdin for bsdtar."))?;
 	stdin
 		.write_all(data)
 		.await
-		.map_err(|e| eprintln!("Error: failed to write to bsdtar stdin: {}", e))?;
+		.map_err(|e| error!("Failed to write to bsdtar stdin: {}.", e))?;
 	drop(stdin);
 
 	// Wait for bsdtar to finish.
 	let exit_status = process
 		.wait()
 		.await
-		.map_err(|e| eprintln!("Error: failed to wait for bsdtar to exit: {}", e))?;
+		.map_err(|e| error!("Failed to wait for bsdtar to exit: {}.", e))?;
 
 	// Check the exit status.
 	if exit_status.success() {
 		Ok(())
 	} else {
-		eprintln!("Error: bsdtar exitted with {}", exit_status);
+		error!("Bsdtar exitted with {}.", exit_status);
 		Err(())
 	}
 }

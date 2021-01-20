@@ -21,6 +21,9 @@
 // OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
+#[macro_use]
+pub mod msg;
+
 pub mod db;
 pub mod package;
 pub mod parse;
