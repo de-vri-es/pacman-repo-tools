@@ -4,6 +4,7 @@ use structopt::clap::AppSettings;
 use structopt::StructOpt;
 
 use pacman_repo_tools::db::{read_db_dir, DatabasePackage};
+use pacman_repo_tools::parse::rpartition;
 
 #[derive(StructOpt)]
 #[structopt(setting = AppSettings::ColoredHelp)]
@@ -77,8 +78,10 @@ async fn do_main(options: Options) -> Result<(), ()> {
 		return Err(());
 	}
 
-	let repositories = sync_dbs(&options.db_dir, &databases).await?;
-	let packages = index_packages_by_name(&repositories);
+	let repositories = Repository::parse_urls(&databases)?;
+
+	let packages = sync_dbs(&options.db_dir, &repositories).await?;
+	let packages = index_packages_by_name(&packages);
 
 	let targets = if options.no_deps {
 		targets.iter().map(String::as_str).collect()
@@ -117,42 +120,70 @@ fn read_files_to_vec(initial: Vec<String>, paths: &[impl AsRef<Path>]) -> Result
 	Ok(result)
 }
 
-/// Download and extract the given database files specified by the URLs to the given directory.
-async fn sync_dbs(directory: impl AsRef<Path>, urls: &[impl AsRef<str>]) -> Result<Vec<(String, Vec<DatabasePackage>)>, ()> {
-	let directory = directory.as_ref();
-
-	let mut names = std::collections::BTreeSet::new();
-	let mut databases = Vec::new();
-	let mut repositories = Vec::new();
-
-	// TODO: check for duplicate database names
-	for url in urls {
-		let url = reqwest::Url::parse(url.as_ref()).map_err(|e| eprintln!("Invalid URL: {}: {}", url.as_ref(), e))?;
-		let name = Path::new(url.path())
-			.file_name()
-			.ok_or_else(|| eprintln!("Could not determine file name from URL: {}", url))?
-			.to_str()
-			.ok_or_else(|| eprintln!("Invalid UTF-8 in URL: {}", url))?;
-
-		if !names.insert(name.to_string()) {
-			eprintln!("Error: duplicate repository name: {}", name);
-			return Err(());
-		}
-		databases.push((name.to_string(), url));
-	}
-
-	for (name, url) in databases {
-		let db_dir = directory.join(&name);
-		download_database(&db_dir, url).await?;
-
-		let packages = read_db_dir(&db_dir).map_err(|e| eprintln!("Error: {}", e))?;
-		repositories.push((name, packages));
-	}
-
-	Ok(repositories)
+struct Repository {
+	name: String,
+	db_url: reqwest::Url,
 }
 
-fn index_packages_by_name(repositories: &[(String, Vec<DatabasePackage>)]) -> BTreeMap<&str, (&str, &DatabasePackage)> {
+impl Repository {
+	/// Parse a list of repository URLs.
+	///
+	/// If different URLs refer to repositories with the same name,
+	/// an error is returned.
+	fn parse_urls(urls: &[impl AsRef<str>]) -> Result<Vec<Repository>, ()> {
+		let mut names = BTreeSet::new();
+		let mut repositories = Vec::with_capacity(urls.len());
+		for url in urls {
+			let repository: Repository = url.as_ref().parse()?;
+			if !names.insert(repository.name.clone()) {
+				eprintln!("Error: duplicate repository name: {}", repository.name);
+				return Err(());
+			}
+			repositories.push(repository);
+		}
+
+		Ok(repositories)
+	}
+}
+
+impl std::str::FromStr for Repository {
+	type Err = ();
+
+	fn from_str(input: &str) -> Result<Self, Self::Err> {
+		let db_url: reqwest::Url = input.parse()
+			.map_err(|e| eprintln!("Error: invalid URL: {}: {}", input, e))?;
+		let name = rpartition(db_url.path(), '/')
+			.map(|(_, name)| name)
+			.unwrap_or(db_url.path());
+		if name.is_empty() {
+			eprintln!("Error: can not determine repository name from URL: {}", input);
+			return Err(());
+		}
+		Ok(Self {
+			name: name.into(),
+			db_url,
+		})
+	}
+}
+
+/// Download and extract the given database files specified by the URLs to the given directory.
+async fn sync_dbs<'a>(directory: impl AsRef<Path>, repositories: &'a [Repository]) -> Result<Vec<(&'a str, Vec<DatabasePackage>)>, ()> {
+	let directory = directory.as_ref();
+
+	let mut repo_packages = Vec::new();
+
+	for repo in repositories {
+		let db_dir = directory.join(&repo.name);
+		download_database(&db_dir, &repo.db_url).await?;
+
+		let packages = read_db_dir(&db_dir).map_err(|e| eprintln!("Error: {}", e))?;
+		repo_packages.push((repo.name.as_str(), packages));
+	}
+
+	Ok(repo_packages)
+}
+
+fn index_packages_by_name<'a>(repositories: &'a [(&'a str, Vec<DatabasePackage>)]) -> BTreeMap<&'a str, (&'a str, &'a DatabasePackage)> {
 	use std::collections::btree_map::Entry;
 
 	let mut index = BTreeMap::new();
@@ -167,7 +198,7 @@ fn index_packages_by_name(repositories: &[(String, Vec<DatabasePackage>)]) -> BT
 					);
 				},
 				Entry::Vacant(entry) => {
-					entry.insert((repo_name.as_str(), package));
+					entry.insert((*repo_name, package));
 				},
 			}
 		}
@@ -277,10 +308,10 @@ fn pop_first<T: Copy + Ord>(set: &mut BTreeSet<T>) -> Option<T> {
 }
 
 /// Download and extract a database file.
-async fn download_database(directory: &Path, url: reqwest::Url) -> Result<(), ()> {
+async fn download_database(directory: &Path, url: &reqwest::Url) -> Result<(), ()> {
 	// TODO: Record modified time and/or ETag to avoid downloading without cause.
 	eprintln!("Downloading {}", url);
-	let database = download_file(url).await.map_err(|e| eprintln!("Error: {}", e))?;
+	let database = download_file(&url).await.map_err(|e| eprintln!("Error: {}", e))?;
 	extract_archive(&directory, &database).await?;
 	Ok(())
 }
@@ -344,7 +375,7 @@ fn remove_dir_all(path: impl AsRef<Path>) -> Result<(), ()> {
 }
 
 /// Download a file over HTTP(S).
-async fn download_file(url: reqwest::Url) -> Result<Vec<u8>, reqwest::Error> {
+async fn download_file(url: &reqwest::Url) -> Result<Vec<u8>, reqwest::Error> {
 	let response = reqwest::get(url.clone()).await?.error_for_status()?;
 	Ok(response.bytes().await?.to_vec())
 }
