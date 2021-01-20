@@ -168,7 +168,7 @@ impl std::str::FromStr for Repository {
 
 	fn from_str(input: &str) -> Result<Self, Self::Err> {
 		let db_url: reqwest::Url = input.parse().map_err(|e| error!("Invalid URL: {}: {}.", input, e))?;
-		let name = rpartition(db_url.path(), '/').map(|(_, name)| name).unwrap_or(db_url.path());
+		let name = rpartition(db_url.path(), '/').map(|(_, name)| name).unwrap_or_else(|| db_url.path());
 		if name.is_empty() {
 			error!("Can not determine repository name from URL: {}.", input);
 			return Err(());
@@ -382,7 +382,7 @@ async fn download_packages(
 	for pkg_name in selected {
 		let (repository, package) = packages
 			.get(pkg_name)
-			.expect(&format!("selected package list contains unknown package: {}", pkg_name));
+			.unwrap_or_else(|| panic!("selected package list contains unknown package: {}", pkg_name));
 		download_package(http_client, directory, repository, package).await?;
 	}
 	Ok(())

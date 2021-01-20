@@ -4,7 +4,7 @@ fn consume_while<'a, F>(input: &mut &'a str, mut condition: F) -> &'a str
 where
 	F: FnMut(char) -> bool,
 {
-	let i = input.find(|c| !condition(c)).unwrap_or(input.len());
+	let i = input.find(|c| !condition(c)).unwrap_or_else(|| input.len());
 	let (result, remainder) = input.split_at(i);
 	*input = remainder;
 	result

@@ -40,7 +40,7 @@ impl Version {
 	/// Create a new version with epoch, pkgver and optional pkgrel.
 	pub fn new(epoch: i32, pkgver: impl Into<String>, pkgrel: Option<String>) -> Self {
 		let pkgver = pkgver.into();
-		let pkgrel = pkgrel.into();
+		let pkgrel = pkgrel;
 		Self { epoch, pkgver, pkgrel }
 	}
 }
@@ -115,7 +115,7 @@ impl<'de> serde::Deserialize<'de> for Version {
 			}
 
 			fn visit_str<E: serde::de::Error>(self, value: &str) -> Result<Version, E> {
-				value.parse().map_err(|e| E::custom(e))
+				value.parse().map_err(E::custom)
 			}
 		}
 
@@ -134,7 +134,7 @@ impl<'de> serde::Deserialize<'de> for PackageVersion {
 			}
 
 			fn visit_str<E: serde::de::Error>(self, value: &str) -> Result<PackageVersion, E> {
-				value.parse().map_err(|e| E::custom(e))
+				value.parse().map_err(E::custom)
 			}
 		}
 

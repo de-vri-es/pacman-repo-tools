@@ -42,17 +42,17 @@ impl Deserializer<BufReader<std::fs::File>> {
 	}
 }
 
-pub fn from_str<'a, T: serde::de::DeserializeOwned>(data: &'a str) -> Result<T, Error> {
+pub fn from_str<T: serde::de::DeserializeOwned>(data: &str) -> Result<T, Error> {
 	let mut deserializer = Deserializer::from_str(data, None);
 	T::deserialize(&mut deserializer)
 }
 
-pub fn from_bytes<'a, T: serde::de::DeserializeOwned>(data: &'a [u8]) -> Result<T, Error> {
+pub fn from_bytes<T: serde::de::DeserializeOwned>(data: &[u8]) -> Result<T, Error> {
 	let mut deserializer = Deserializer::from_bytes(data, None);
 	T::deserialize(&mut deserializer)
 }
 
-pub fn from_file<'a, T: serde::de::DeserializeOwned>(path: impl AsRef<Path>) -> Result<T, Error> {
+pub fn from_file<T: serde::de::DeserializeOwned>(path: impl AsRef<Path>) -> Result<T, Error> {
 	let path = path.as_ref();
 	let mut deserializer = Deserializer::from_file(path).map_err(|e| Error {
 		source: Some(path.display().to_string()),
@@ -96,7 +96,7 @@ impl<R: BufRead> Deserializer<R> {
 	fn extend_error<T>(&self, result: Result<T, Error>) -> Result<T, Error> {
 		result.map_err(|e| Error {
 			source: e.source.or_else(|| self.source.clone()),
-			line: e.line.or_else(|| Some(self.line)),
+			line: e.line.or(Some(self.line)),
 			message: e.message,
 		})
 	}
