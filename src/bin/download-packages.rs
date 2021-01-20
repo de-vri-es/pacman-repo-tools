@@ -17,7 +17,7 @@ struct Options {
 	pkg: Vec<String>,
 
 	/// Read packages to download from a file, one package name per line.
-	#[structopt(long , short = "f")]
+	#[structopt(long, short = "f")]
 	#[structopt(value_name = "PATH")]
 	pkg_file: Vec<PathBuf>,
 
@@ -152,19 +152,13 @@ impl std::str::FromStr for Repository {
 	type Err = ();
 
 	fn from_str(input: &str) -> Result<Self, Self::Err> {
-		let db_url: reqwest::Url = input.parse()
-			.map_err(|e| eprintln!("Error: invalid URL: {}: {}", input, e))?;
-		let name = rpartition(db_url.path(), '/')
-			.map(|(_, name)| name)
-			.unwrap_or(db_url.path());
+		let db_url: reqwest::Url = input.parse().map_err(|e| eprintln!("Error: invalid URL: {}: {}", input, e))?;
+		let name = rpartition(db_url.path(), '/').map(|(_, name)| name).unwrap_or(db_url.path());
 		if name.is_empty() {
 			eprintln!("Error: can not determine repository name from URL: {}", input);
 			return Err(());
 		}
-		Ok(Self {
-			name: name.into(),
-			db_url,
-		})
+		Ok(Self { name: name.into(), db_url })
 	}
 }
 
@@ -293,11 +287,13 @@ impl<'a, 'b> DependencyResolver<'a, 'b> {
 		if let Some((_repo, package)) = self.packages.get(target) {
 			Ok(package)
 		} else {
-			let provider = self.providers
+			let provider = self
+				.providers
 				.get(target)
 				.and_then(|x| x.iter().next())
 				.ok_or_else(|| eprintln!("no provider found for target: {}", target))?;
-			self.packages.get(provider)
+			self.packages
+				.get(provider)
 				.map(|&(_repo, package)| package)
 				.ok_or_else(|| eprint!("no such package: {}", provider))
 		}
@@ -382,10 +378,16 @@ async fn download_file(url: &reqwest::Url) -> Result<Vec<u8>, reqwest::Error> {
 	Ok(response.bytes().await?.to_vec())
 }
 
-async fn download_packages(directory: &impl AsRef<Path>, selected: &BTreeSet<&str>, packages: &BTreeMap<&str, (&Repository, &DatabasePackage)>) -> Result<(), ()> {
+async fn download_packages(
+	directory: &impl AsRef<Path>,
+	selected: &BTreeSet<&str>,
+	packages: &BTreeMap<&str, (&Repository, &DatabasePackage)>,
+) -> Result<(), ()> {
 	let directory = directory.as_ref();
 	for pkg_name in selected {
-		let (repository, package) = packages.get(pkg_name).expect(&format!("selected package list contains unknown package: {}", pkg_name));
+		let (repository, package) = packages
+			.get(pkg_name)
+			.expect(&format!("selected package list contains unknown package: {}", pkg_name));
 		download_package(directory, repository, package).await?;
 	}
 	Ok(())
@@ -405,8 +407,7 @@ async fn download_package(directory: impl AsRef<Path>, repository: &Repository, 
 		}
 	}
 
-	let mut file = std::fs::File::create(&pkg_path)
-		.map_err(|e| eprintln!("Error: failed to open {} for writing: {}", pkg_path.display(), e))?;
+	let mut file = std::fs::File::create(&pkg_path).map_err(|e| eprintln!("Error: failed to open {} for writing: {}", pkg_path.display(), e))?;
 	eprintln!("Downloading {}", package.filename);
 	let data = download_file(&pkg_url).await.map_err(|e| eprintln!("Error: {}", e))?;
 	file.write_all(&data)
@@ -430,11 +431,13 @@ fn stat(path: impl AsRef<Path>) -> Result<Option<std::fs::Metadata>, ()> {
 	let path = path.as_ref();
 	match path.metadata() {
 		Ok(x) => Ok(Some(x)),
-		Err(e) => if e.kind() == std::io::ErrorKind::NotFound {
-			Ok(None)
-		} else  {
-			eprintln!("Error: failed to stat {}: {}", path.display(), e);
-			Err(())
-		}
+		Err(e) => {
+			if e.kind() == std::io::ErrorKind::NotFound {
+				Ok(None)
+			} else {
+				eprintln!("Error: failed to stat {}: {}", path.display(), e);
+				Err(())
+			}
+		},
 	}
 }
