@@ -3,30 +3,10 @@ pub use yansi::Paint;
 
 #[doc(hidden)]
 pub fn use_color() -> bool {
-	use std::sync::atomic::{AtomicU32, Ordering};
-	static SHOULD_COLOR: AtomicU32 = AtomicU32::new(0);
-	const COLOR_YES: u32 = 1;
-	const COLOR_NO: u32 = 2;
-
-	match SHOULD_COLOR.load(Ordering::Relaxed) {
-		COLOR_YES => return true,
-		COLOR_NO => return false,
-		_ => (),
-	};
-
-	if std::env::var_os("CLICOLOR").map(|x| x == "0") == Some(true) {
-		SHOULD_COLOR.store(COLOR_NO, Ordering::Relaxed);
-		false
-	} else if std::env::var_os("CLICOLOR_FORCE").map(|x| x == "1") == Some(true) {
-		SHOULD_COLOR.store(COLOR_YES, Ordering::Relaxed);
-		true
-	} else if atty::is(atty::Stream::Stdout) {
-		SHOULD_COLOR.store(COLOR_YES, Ordering::Relaxed);
-		true
-	} else {
-		SHOULD_COLOR.store(COLOR_NO, Ordering::Relaxed);
-		false
-	}
+	let force_off = std::env::var_os("CLICOLOR").map(|x| x == "0").unwrap_or(false);
+	let force_on = std::env::var_os("CLICOLOR_FORCE").map(|x| x == "1").unwrap_or(false);
+	let is_tty = atty::is(atty::Stream::Stdout);
+	!force_off && (force_on || is_tty)
 }
 
 #[macro_export]
