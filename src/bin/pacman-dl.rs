@@ -197,9 +197,9 @@ async fn sync_dbs<'a>(
 
 	let mut repo_packages = Vec::new();
 
-	for repo in repositories {
+	for (i, repo) in repositories.iter().enumerate() {
 		let db_dir = directory.join(&repo.name);
-		download_database(http_client, &db_dir, &repo.db_url).await?;
+		download_database(http_client, &db_dir, &repo.db_url, i, repositories.len()).await?;
 
 		let packages = read_db_dir(&db_dir).map_err(|e| error!("{}.", e))?;
 		repo_packages.push((repo, packages));
@@ -350,8 +350,8 @@ fn pop_first<T: Copy + Ord>(set: &mut BTreeSet<T>) -> Option<T> {
 }
 
 /// Download and extract a database file.
-async fn download_database(http_client: &reqwest::Client, directory: &Path, url: &reqwest::Url) -> Result<(), ()> {
-	plain_no_eol!("Downloading {}...", Paint::cyan(url));
+async fn download_database(http_client: &reqwest::Client, directory: &Path, url: &reqwest::Url, index: usize, total: usize) -> Result<(), ()> {
+	plain_no_eol!("Downloading [{}/{}] {}...", Paint::blue(index + 1).bold(), Paint::blue(total).bold(), Paint::cyan(url));
 	let last_modified_path = directory.join("last-modified");
 	let etag_path = directory.join("etag");
 	let last_modified = std::fs::read_to_string(&last_modified_path).ok();
@@ -389,11 +389,11 @@ async fn download_packages(
 	packages: &BTreeMap<&str, (&Repository, &DatabasePackage)>,
 ) -> Result<(), ()> {
 	let directory = directory.as_ref();
-	for pkg_name in selected {
+	for (i, pkg_name) in selected.iter().enumerate() {
 		let (repository, package) = packages
 			.get(pkg_name)
 			.unwrap_or_else(|| panic!("selected package list contains unknown package: {}", pkg_name));
-		download_package(http_client, directory, repository, package).await?;
+		download_package(http_client, directory, repository, package, i, selected.len()).await?;
 	}
 	Ok(())
 }
@@ -404,6 +404,8 @@ async fn download_package(
 	directory: impl AsRef<Path>,
 	repository: &Repository,
 	package: &DatabasePackage,
+	index: usize,
+	total: usize,
 ) -> Result<(), ()> {
 	use std::io::Write;
 	let directory = directory.as_ref();
@@ -411,18 +413,25 @@ async fn download_package(
 
 	let pkg_url = package_url(repository, package);
 	let pkg_path = directory.join(&package.filename);
-	if let Some(metadata) = stat(&pkg_path)? {
+	let skip = if let Some(metadata) = stat(&pkg_path)? {
 		if metadata.len() != package.compressed_size {
 			warning!("File size of {} does not match, re-downloading package.", package.filename);
+			false
 		} else if !file_sha256(&pkg_path)?.eq_ignore_ascii_case(&package.sha256sum) {
 			warning!("SHA256 checksum of {} does not match, re-downloading package.", package.filename);
+			false
 		} else {
-			plain!("Downloading {}... {}", Paint::cyan(&package.name), Paint::yellow("up to date"));
-			return Ok(());
+			true
 		}
-	}
+	} else {
+		false
+	};
 
-	plain_no_eol!("Downloading {}...", Paint::cyan(&package.name));
+	plain_no_eol!("Downloading [{}/{}] {}...", Paint::blue(index + 1).bold(), Paint::blue(total).bold(), Paint::cyan(&package.name));
+	if skip {
+		println!(" {}", Paint::yellow("up to date"));
+		return Ok(());
+	}
 	let mut file = std::fs::File::create(&pkg_path).map_err(|e| {
 		println!(" {}", Paint::red("failed"));
 		error!("Failed to open {} for writing: {}.", pkg_path.display(), e);
