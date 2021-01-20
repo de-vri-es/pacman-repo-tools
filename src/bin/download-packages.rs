@@ -36,7 +36,7 @@ struct Options {
 	db_file: Vec<PathBuf>,
 
 	/// Download packages to this folder.
-	#[structopt(long)]
+	#[structopt(long, short = "o")]
 	#[structopt(value_name = "DIRECTORY")]
 	#[structopt(default_value = "packages")]
 	pkg_dir: PathBuf,
@@ -80,17 +80,19 @@ async fn do_main(options: Options) -> Result<(), ()> {
 
 	let repositories = Repository::parse_urls(&databases)?;
 
+	eprintln!("Syncing repository databases");
 	let packages = sync_dbs(&options.db_dir, &repositories).await?;
 	let packages = index_packages_by_name(&packages);
 
-	let targets = if options.no_deps {
+	let selected_packages = if options.no_deps {
 		targets.iter().map(String::as_str).collect()
 	} else {
 		let resolver = DependencyResolver::new(&packages);
 		resolver.resolve(&targets)?
 	};
 
-	eprintln!("Packages to download: {:?}", targets);
+	eprintln!("Downloading packages");
+	download_packages(&options.pkg_dir, &selected_packages, &packages).await?;
 
 	Ok(())
 }
@@ -167,7 +169,7 @@ impl std::str::FromStr for Repository {
 }
 
 /// Download and extract the given database files specified by the URLs to the given directory.
-async fn sync_dbs<'a>(directory: impl AsRef<Path>, repositories: &'a [Repository]) -> Result<Vec<(&'a str, Vec<DatabasePackage>)>, ()> {
+async fn sync_dbs<'a>(directory: impl AsRef<Path>, repositories: &'a [Repository]) -> Result<Vec<(&'a Repository, Vec<DatabasePackage>)>, ()> {
 	let directory = directory.as_ref();
 
 	let mut repo_packages = Vec::new();
@@ -177,28 +179,28 @@ async fn sync_dbs<'a>(directory: impl AsRef<Path>, repositories: &'a [Repository
 		download_database(&db_dir, &repo.db_url).await?;
 
 		let packages = read_db_dir(&db_dir).map_err(|e| eprintln!("Error: {}", e))?;
-		repo_packages.push((repo.name.as_str(), packages));
+		repo_packages.push((repo, packages));
 	}
 
 	Ok(repo_packages)
 }
 
-fn index_packages_by_name<'a>(repositories: &'a [(&'a str, Vec<DatabasePackage>)]) -> BTreeMap<&'a str, (&'a str, &'a DatabasePackage)> {
+fn index_packages_by_name<'a>(packages: &'a [(&'a Repository, Vec<DatabasePackage>)]) -> BTreeMap<&'a str, (&'a Repository, &'a DatabasePackage)> {
 	use std::collections::btree_map::Entry;
 
-	let mut index = BTreeMap::new();
-	for (repo_name, packages) in repositories {
+	let mut index: BTreeMap<&str, (&Repository, &DatabasePackage)> = BTreeMap::new();
+	for (repo, packages) in packages {
 		for package in packages {
 			match index.entry(package.name.as_str()) {
 				Entry::Occupied(x) => {
-					let (earlier_repo, _) = x.get();
+					let (prev_repo, _) = x.get();
 					eprintln!(
 						"Warning: package {} already encountered in {} repository, ignoring package from {} repository",
-						package.name, earlier_repo, repo_name
+						package.name, prev_repo.name, repo.name
 					);
 				},
 				Entry::Vacant(entry) => {
-					entry.insert((*repo_name, package));
+					entry.insert((repo, package));
 				},
 			}
 		}
@@ -208,7 +210,7 @@ fn index_packages_by_name<'a>(repositories: &'a [(&'a str, Vec<DatabasePackage>)
 }
 
 /// Create an index of virtual target names to concrete packages that provide the target.
-fn index_providers<'a>(packages: &BTreeMap<&'a str, (&'a str, &'a DatabasePackage)>) -> BTreeMap<&'a str, BTreeSet<&'a str>> {
+fn index_providers<'a>(packages: &BTreeMap<&'a str, (&'a Repository, &'a DatabasePackage)>) -> BTreeMap<&'a str, BTreeSet<&'a str>> {
 	let mut index: BTreeMap<&'a str, BTreeSet<&'a str>> = BTreeMap::new();
 	for (_repo, package) in packages.values() {
 		index.entry(&package.name).or_default().insert(&package.name);
@@ -220,14 +222,14 @@ fn index_providers<'a>(packages: &BTreeMap<&'a str, (&'a str, &'a DatabasePackag
 }
 
 struct DependencyResolver<'a, 'b> {
-	packages: &'b BTreeMap<&'a str, (&'a str, &'a DatabasePackage)>,
+	packages: &'b BTreeMap<&'a str, (&'a Repository, &'a DatabasePackage)>,
 	providers: BTreeMap<&'a str, BTreeSet<&'a str>>,
 	selected_packages: BTreeSet<&'a str>,
 	provided_targets: BTreeSet<&'a str>,
 }
 
 impl<'a, 'b> DependencyResolver<'a, 'b> {
-	pub fn new(packages: &'b BTreeMap<&'a str, (&'a str, &'a DatabasePackage)>) -> Self {
+	pub fn new(packages: &'b BTreeMap<&'a str, (&'a Repository, &'a DatabasePackage)>) -> Self {
 		Self {
 			packages,
 			providers: index_providers(&packages),
@@ -358,7 +360,7 @@ async fn extract_archive(directory: &Path, data: &[u8]) -> Result<(), ()> {
 /// Create a directory and all parent directories as needed.
 fn make_dirs(path: impl AsRef<Path>) -> Result<(), ()> {
 	let path = path.as_ref();
-	std::fs::create_dir_all(path).map_err(|e| eprintln!("Error: failed to create directiry {}: {}", path.display(), e))
+	std::fs::create_dir_all(path).map_err(|e| eprintln!("Error: failed to create directory {}: {}", path.display(), e))
 }
 
 /// Recursively remove a directory and it's content.
@@ -378,4 +380,61 @@ fn remove_dir_all(path: impl AsRef<Path>) -> Result<(), ()> {
 async fn download_file(url: &reqwest::Url) -> Result<Vec<u8>, reqwest::Error> {
 	let response = reqwest::get(url.clone()).await?.error_for_status()?;
 	Ok(response.bytes().await?.to_vec())
+}
+
+async fn download_packages(directory: &impl AsRef<Path>, selected: &BTreeSet<&str>, packages: &BTreeMap<&str, (&Repository, &DatabasePackage)>) -> Result<(), ()> {
+	let directory = directory.as_ref();
+	for pkg_name in selected {
+		let (repository, package) = packages.get(pkg_name).expect(&format!("selected package list contains unknown package: {}", pkg_name));
+		download_package(directory, repository, package).await?;
+	}
+	Ok(())
+}
+
+async fn download_package(directory: impl AsRef<Path>, repository: &Repository, package: &DatabasePackage) -> Result<(), ()> {
+	use std::io::Write;
+	let directory = directory.as_ref();
+	make_dirs(directory)?;
+
+	let pkg_url = package_url(repository, package);
+	let pkg_path = directory.join(&package.filename);
+	if let Some(metadata) = stat(&pkg_path)? {
+		if metadata.len() == package.compressed_size {
+			// TODO: check sha256sum
+			return Ok(());
+		}
+	}
+
+	let mut file = std::fs::File::create(&pkg_path)
+		.map_err(|e| eprintln!("Error: failed to open {} for writing: {}", pkg_path.display(), e))?;
+	eprintln!("Downloading {}", package.filename);
+	let data = download_file(&pkg_url).await.map_err(|e| eprintln!("Error: {}", e))?;
+	file.write_all(&data)
+		.map_err(|e| eprintln!("Error: failed to write to {}: {}", pkg_path.display(), e))?;
+	Ok(())
+}
+
+fn package_url(repository: &Repository, package: &DatabasePackage) -> reqwest::Url {
+	let db_path = repository.db_url.path();
+	let parent = rpartition(db_path, '/').map(|(parent, _db_name)| parent).unwrap_or("");
+
+	let mut pkg_url = repository.db_url.clone();
+	pkg_url.set_path(&format!("{}/{}", parent, package.filename));
+	pkg_url
+}
+
+/// Get metadata for a file path.
+///
+/// Returns Ok(None) if the path does not exist.
+fn stat(path: impl AsRef<Path>) -> Result<Option<std::fs::Metadata>, ()> {
+	let path = path.as_ref();
+	match path.metadata() {
+		Ok(x) => Ok(Some(x)),
+		Err(e) => if e.kind() == std::io::ErrorKind::NotFound {
+			Ok(None)
+		} else  {
+			eprintln!("Error: failed to stat {}: {}", path.display(), e);
+			Err(())
+		}
+	}
 }

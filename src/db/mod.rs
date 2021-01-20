@@ -32,10 +32,10 @@ pub struct DatabasePackage {
 	pub groups: Vec<String>,
 
 	#[serde(rename = "CSIZE")]
-	pub compressed_size: usize,
+	pub compressed_size: u64,
 
 	#[serde(rename = "ISIZE")]
-	pub installed_size: usize,
+	pub installed_size: u64,
 
 	pub md5sum: String,
 
@@ -52,7 +52,7 @@ pub struct DatabasePackage {
 	pub arch: String,
 
 	#[serde(rename = "BUILDDATE")]
-	pub build_date: usize,
+	pub build_date: i64,
 
 	pub packager: String,
 
