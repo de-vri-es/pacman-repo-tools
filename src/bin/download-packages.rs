@@ -51,6 +51,11 @@ struct Options {
 	#[structopt(default_value = "db")]
 	db_dir: PathBuf,
 
+	/// Create a database containing the downloaded packages with the given name.
+	#[structopt(long, short)]
+	#[structopt(value_name = "NAME")]
+	create_db: Option<String>,
+
 	/// Do not automatically download dependencies.
 	#[structopt(long)]
 	no_deps: bool,
@@ -107,6 +112,11 @@ async fn do_main(options: Options) -> Result<(), ()> {
 
 	msg!("Downloading packages");
 	download_packages(&http_client, &options.pkg_dir, &selected_packages, &packages).await?;
+
+	if let Some(db_name) = options.create_db {
+		msg!("Creating {}", Paint::blue(format_args!("{}.db", db_name)).bold());
+		create_database(&options.pkg_dir, &db_name, &selected_packages, &packages).await?;
+	}
 
 	Ok(())
 }
@@ -439,6 +449,51 @@ fn package_url(repository: &Repository, package: &DatabasePackage) -> reqwest::U
 	pkg_url
 }
 
+/// Create a new repository database containing the selected packages.
+async fn create_database(
+	directory: &Path,
+	db_name: &str,
+	selected: &BTreeSet<&str>,
+	packages: &BTreeMap<&str, (&Repository, &DatabasePackage)>,
+) -> Result<(), ()> {
+	let db_file_name = format!("{}.db.tar.zst", db_name);
+	let db_path = directory.join(&db_file_name);
+	remove_file(db_path)?;
+	make_dirs(directory)?;
+
+	for (i, pkg_name) in selected.iter().enumerate() {
+		if Paint::is_enabled() && i != 0 {
+			print!("\x1b[F"); // Go up one line.
+			plain_no_eol!("Processing package {}/{}.", i + 1, selected.len());
+			print!("\x1b[K"); // Clear to end of line.
+			println!();
+		} else {
+			plain!("Processing package {}/{}.", i + 1, selected.len());
+		}
+		let (_repo, package) = packages
+			.get(pkg_name)
+			.unwrap_or_else(|| panic!("selected package list contains unknown package: {}", pkg_name));
+
+		let status = tokio::process::Command::new("repo-add")
+			.arg("-q")
+			.arg(&db_file_name)
+			.arg(&package.filename)
+			.current_dir(directory)
+			.stdin(std::process::Stdio::null())
+			.spawn()
+			.map_err(|e| error!("Failed to run repo-add: {}", e))?
+			.wait()
+			.await
+			.map_err(|e| error!("Failed to wait for repo-add to finish: {}.", e))?;
+		if !status.success() {
+			error!("repo-add exited with {}.", status);
+			return Err(());
+		}
+	}
+
+	Ok(())
+}
+
 struct Download {
 	data: Vec<u8>,
 	last_modified: Option<String>,
@@ -567,7 +622,21 @@ async fn extract_archive(directory: &Path, data: &[u8]) -> Result<(), ()> {
 	if exit_status.success() {
 		Ok(())
 	} else {
-		error!("Bsdtar exitted with {}.", exit_status);
+		error!("bsdtar exitted with {}.", exit_status);
 		Err(())
 	}
+}
+
+/// Remove a file.
+///
+/// Unlike [`std::fs::remove_file`], this function does not return an error if the file does not exist.
+fn remove_file(path: impl AsRef<Path>) -> Result<(), ()> {
+	let path = path.as_ref();
+	if let Err(e) = std::fs::remove_file(path) {
+		if e.kind() != std::io::ErrorKind::NotFound {
+			error!("Failed to delete {}: {}.", path.display(), e);
+			return Err(());
+		}
+	}
+	Ok(())
 }
