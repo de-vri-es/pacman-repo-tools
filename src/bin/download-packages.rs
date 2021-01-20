@@ -8,24 +8,26 @@ use pacman_repo_tools::msg::{use_color, Paint};
 use pacman_repo_tools::parse::rpartition;
 use pacman_repo_tools::{error, msg, plain, plain_no_eol, warning};
 
+/// Download packages from a number of pacman repositories.
+///
+/// The order of repositories is significant in case multiple repositories have a package with the same name.
+/// In that case, repositories mentioned earlier will be used.
+/// Repositories mentioned with `--db-url` are always consulted before those read from a file.
 #[derive(StructOpt)]
+#[structopt(name = env!("CARGO_BIN_NAME"))]
 #[structopt(setting = AppSettings::ColoredHelp)]
 #[structopt(setting = AppSettings::UnifiedHelpMessage)]
 #[structopt(setting = AppSettings::DeriveDisplayOrder)]
 struct Options {
-	/// Download the package by name.
+	/// Add a package to be downloaded.
 	#[structopt(long, short)]
 	#[structopt(value_name = "NAME")]
 	pkg: Vec<String>,
 
-	/// Read packages to download from a file, one package name per line.
+	/// Read packages to download from a file, one package per line.
 	#[structopt(long, short = "f")]
 	#[structopt(value_name = "PATH")]
 	pkg_file: Vec<PathBuf>,
-
-	/// Download all dependencies too.
-	#[structopt(long)]
-	no_deps: bool,
 
 	/// A repository to download packages from (specify the URL for the database archive).
 	#[structopt(long)]
@@ -37,17 +39,21 @@ struct Options {
 	#[structopt(value_name = "PATH")]
 	db_file: Vec<PathBuf>,
 
-	/// Download packages to this folder.
+	/// Save downloaded packages to this directory.
 	#[structopt(long, short = "o")]
 	#[structopt(value_name = "DIRECTORY")]
 	#[structopt(default_value = "packages")]
 	pkg_dir: PathBuf,
 
-	/// Download repository databases to this folder.
+	/// Extract repository databases to this directory.
 	#[structopt(long)]
 	#[structopt(value_name = "DIRECTORY")]
 	#[structopt(default_value = "db")]
 	db_dir: PathBuf,
+
+	/// Do not automatically download dependencies.
+	#[structopt(long)]
+	no_deps: bool,
 }
 
 fn main() {
