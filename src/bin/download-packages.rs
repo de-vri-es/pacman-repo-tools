@@ -314,6 +314,116 @@ async fn download_database(directory: &Path, url: &reqwest::Url) -> Result<(), (
 	Ok(())
 }
 
+/// Download all packages.
+async fn download_packages(
+	directory: &impl AsRef<Path>,
+	selected: &BTreeSet<&str>,
+	packages: &BTreeMap<&str, (&Repository, &DatabasePackage)>,
+) -> Result<(), ()> {
+	let directory = directory.as_ref();
+	for pkg_name in selected {
+		let (repository, package) = packages
+			.get(pkg_name)
+			.expect(&format!("selected package list contains unknown package: {}", pkg_name));
+		download_package(directory, repository, package).await?;
+	}
+	Ok(())
+}
+
+/// Download a single package, if required.
+async fn download_package(directory: impl AsRef<Path>, repository: &Repository, package: &DatabasePackage) -> Result<(), ()> {
+	use std::io::Write;
+	let directory = directory.as_ref();
+	make_dirs(directory)?;
+
+	let pkg_url = package_url(repository, package);
+	let pkg_path = directory.join(&package.filename);
+	if let Some(metadata) = stat(&pkg_path)? {
+		if metadata.len() != package.compressed_size {
+			eprintln!("Warning: file size of {} does not match, re-downloading package", package.filename);
+		} else if !file_sha256(&pkg_path)?.eq_ignore_ascii_case(&package.sha256sum) {
+			eprintln!("Warning: sha256 checksum of {} does not match, re-downloading package", package.filename);
+		} else {
+			return Ok(())
+		}
+	}
+
+	let mut file = std::fs::File::create(&pkg_path).map_err(|e| eprintln!("Error: failed to open {} for writing: {}", pkg_path.display(), e))?;
+	eprintln!("Downloading {}", package.filename);
+	let data = download_file(&pkg_url).await.map_err(|e| eprintln!("Error: {}", e))?;
+	file.write_all(&data)
+		.map_err(|e| eprintln!("Error: failed to write to {}: {}", pkg_path.display(), e))?;
+	Ok(())
+}
+
+/// Get the URL of a package file.
+fn package_url(repository: &Repository, package: &DatabasePackage) -> reqwest::Url {
+	let db_path = repository.db_url.path();
+	let parent = rpartition(db_path, '/').map(|(parent, _db_name)| parent).unwrap_or("");
+
+	let mut pkg_url = repository.db_url.clone();
+	pkg_url.set_path(&format!("{}/{}", parent, package.filename));
+	pkg_url
+}
+
+/// Download a file over HTTP(S).
+async fn download_file(url: &reqwest::Url) -> Result<Vec<u8>, reqwest::Error> {
+	let response = reqwest::get(url.clone()).await?.error_for_status()?;
+	Ok(response.bytes().await?.to_vec())
+}
+
+/// Create a directory and all parent directories as needed.
+fn make_dirs(path: impl AsRef<Path>) -> Result<(), ()> {
+	let path = path.as_ref();
+	std::fs::create_dir_all(path).map_err(|e| eprintln!("Error: failed to create directory {}: {}", path.display(), e))
+}
+
+/// Recursively remove a directory and it's content.
+fn remove_dir_all(path: impl AsRef<Path>) -> Result<(), ()> {
+	let path = path.as_ref();
+	match std::fs::remove_dir_all(path) {
+		Ok(()) => Ok(()),
+		Err(ref e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+		Err(e) => {
+			eprintln!("Error: failed to remove directory {} or it's content: {}", path.display(), e);
+			Err(())
+		},
+	}
+}
+
+/// Get metadata for a file path.
+///
+/// Returns Ok(None) if the path does not exist.
+fn stat(path: impl AsRef<Path>) -> Result<Option<std::fs::Metadata>, ()> {
+	let path = path.as_ref();
+	match path.metadata() {
+		Ok(x) => Ok(Some(x)),
+		Err(e) => {
+			if e.kind() == std::io::ErrorKind::NotFound {
+				Ok(None)
+			} else {
+				eprintln!("Error: failed to stat {}: {}", path.display(), e);
+				Err(())
+			}
+		},
+	}
+}
+
+/// Compute the sha256 checksum of the contents of a file.
+///
+/// Returns the sha256 digest as hex string.
+fn file_sha256(path: impl AsRef<Path>) -> Result<String, ()> {
+	use sha2::Digest;
+	let path = path.as_ref();
+	let data = std::fs::read(path).map_err(|e| eprintln!("Error: failed to read {}: {}", path.display(), e))?;
+	let digest = sha2::Sha256::digest(&data);
+	let mut hex = String::with_capacity(256 / 8 * 2);
+	for byte in digest {
+		hex += &format!("{:02x}", byte);
+	}
+	Ok(hex)
+}
+
 /// Extract an archive in a directory using bsdtar.
 async fn extract_archive(directory: &Path, data: &[u8]) -> Result<(), ()> {
 	use tokio::io::AsyncWriteExt;
@@ -350,94 +460,5 @@ async fn extract_archive(directory: &Path, data: &[u8]) -> Result<(), ()> {
 	} else {
 		eprintln!("Error: bsdtar exitted with {}", exit_status);
 		Err(())
-	}
-}
-
-/// Create a directory and all parent directories as needed.
-fn make_dirs(path: impl AsRef<Path>) -> Result<(), ()> {
-	let path = path.as_ref();
-	std::fs::create_dir_all(path).map_err(|e| eprintln!("Error: failed to create directory {}: {}", path.display(), e))
-}
-
-/// Recursively remove a directory and it's content.
-fn remove_dir_all(path: impl AsRef<Path>) -> Result<(), ()> {
-	let path = path.as_ref();
-	match std::fs::remove_dir_all(path) {
-		Ok(()) => Ok(()),
-		Err(ref e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
-		Err(e) => {
-			eprintln!("Error: failed to remove directory {} or it's content: {}", path.display(), e);
-			Err(())
-		},
-	}
-}
-
-/// Download a file over HTTP(S).
-async fn download_file(url: &reqwest::Url) -> Result<Vec<u8>, reqwest::Error> {
-	let response = reqwest::get(url.clone()).await?.error_for_status()?;
-	Ok(response.bytes().await?.to_vec())
-}
-
-async fn download_packages(
-	directory: &impl AsRef<Path>,
-	selected: &BTreeSet<&str>,
-	packages: &BTreeMap<&str, (&Repository, &DatabasePackage)>,
-) -> Result<(), ()> {
-	let directory = directory.as_ref();
-	for pkg_name in selected {
-		let (repository, package) = packages
-			.get(pkg_name)
-			.expect(&format!("selected package list contains unknown package: {}", pkg_name));
-		download_package(directory, repository, package).await?;
-	}
-	Ok(())
-}
-
-async fn download_package(directory: impl AsRef<Path>, repository: &Repository, package: &DatabasePackage) -> Result<(), ()> {
-	use std::io::Write;
-	let directory = directory.as_ref();
-	make_dirs(directory)?;
-
-	let pkg_url = package_url(repository, package);
-	let pkg_path = directory.join(&package.filename);
-	if let Some(metadata) = stat(&pkg_path)? {
-		if metadata.len() == package.compressed_size {
-			// TODO: check sha256sum
-			return Ok(());
-		}
-	}
-
-	let mut file = std::fs::File::create(&pkg_path).map_err(|e| eprintln!("Error: failed to open {} for writing: {}", pkg_path.display(), e))?;
-	eprintln!("Downloading {}", package.filename);
-	let data = download_file(&pkg_url).await.map_err(|e| eprintln!("Error: {}", e))?;
-	file.write_all(&data)
-		.map_err(|e| eprintln!("Error: failed to write to {}: {}", pkg_path.display(), e))?;
-	Ok(())
-}
-
-fn package_url(repository: &Repository, package: &DatabasePackage) -> reqwest::Url {
-	let db_path = repository.db_url.path();
-	let parent = rpartition(db_path, '/').map(|(parent, _db_name)| parent).unwrap_or("");
-
-	let mut pkg_url = repository.db_url.clone();
-	pkg_url.set_path(&format!("{}/{}", parent, package.filename));
-	pkg_url
-}
-
-/// Get metadata for a file path.
-///
-/// Returns Ok(None) if the path does not exist.
-fn stat(path: impl AsRef<Path>) -> Result<Option<std::fs::Metadata>, ()> {
-	let path = path.as_ref();
-	match path.metadata() {
-		Ok(x) => Ok(Some(x)),
-		Err(e) => {
-			if e.kind() == std::io::ErrorKind::NotFound {
-				Ok(None)
-			} else {
-				eprintln!("Error: failed to stat {}: {}", path.display(), e);
-				Err(())
-			}
-		},
 	}
 }
