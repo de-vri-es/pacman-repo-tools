@@ -51,10 +51,15 @@ struct Options {
 	#[structopt(default_value = "db")]
 	db_dir: PathBuf,
 
-	/// Create a database containing the downloaded packages with the given name.
-	#[structopt(long, short)]
+	/// Add the downloaded packages to a database.
+	#[structopt(long)]
 	#[structopt(value_name = "NAME")]
-	create_db: Option<String>,
+	add_to_db: Option<PathBuf>,
+
+	/// Delete the database before adding packages to it.
+	#[structopt(long)]
+	#[structopt(requires = "add-to-db")]
+	recreate_db: bool,
 
 	/// Do not automatically download dependencies.
 	#[structopt(long)]
@@ -111,11 +116,19 @@ async fn do_main(options: Options) -> Result<(), ()> {
 	};
 
 	msg!("Downloading packages");
-	download_packages(&http_client, &options.pkg_dir, &selected_packages, &packages).await?;
+	let downloaded = download_packages(&http_client, &options.pkg_dir, &selected_packages, &packages).await?;
 
-	if let Some(db_name) = options.create_db {
-		msg!("Creating {}", Paint::blue(format_args!("{}.db", db_name)).bold());
-		create_database(&options.pkg_dir, &db_name, &selected_packages, &packages).await?;
+	if let Some(db_path) = options.add_to_db {
+		msg!("Adding packages to {}", Paint::blue(db_path.display()).bold());
+		if options.recreate_db {
+			// If we create a fresh database, add all selected packages.
+			remove_file(&db_path)?;
+			let selected: Vec<_> = selected_packages.iter().map(|name| *packages.get(name).unwrap()).collect();
+			add_to_database(&db_path, &options.pkg_dir, &selected).await?;
+		} else {
+			// Otherwise, only add downloaded packages.
+			add_to_database(&db_path, &options.pkg_dir, &downloaded).await?;
+		}
 	}
 
 	Ok(())
@@ -382,20 +395,23 @@ async fn download_database(http_client: &reqwest::Client, directory: &Path, url:
 }
 
 /// Download all packages.
-async fn download_packages(
+async fn download_packages<'a>(
 	http_client: &reqwest::Client,
 	directory: &impl AsRef<Path>,
 	selected: &BTreeSet<&str>,
-	packages: &BTreeMap<&str, (&Repository, &DatabasePackage)>,
-) -> Result<(), ()> {
+	packages: &BTreeMap<&str, (&'a Repository, &'a DatabasePackage)>,
+) -> Result<Vec<(&'a Repository, &'a DatabasePackage)>, ()> {
 	let directory = directory.as_ref();
+	let mut downloaded = Vec::with_capacity(selected.len());
 	for (i, pkg_name) in selected.iter().enumerate() {
 		let (repository, package) = packages
 			.get(pkg_name)
 			.unwrap_or_else(|| panic!("selected package list contains unknown package: {}", pkg_name));
-		download_package(http_client, directory, repository, package, i, selected.len()).await?;
+		if download_package(http_client, directory, repository, package, i, selected.len()).await? {
+			downloaded.push((*repository, *package));
+		}
 	}
-	Ok(())
+	Ok(downloaded)
 }
 
 /// Download a single package, if required.
@@ -406,7 +422,7 @@ async fn download_package(
 	package: &DatabasePackage,
 	index: usize,
 	total: usize,
-) -> Result<(), ()> {
+) -> Result<bool, ()> {
 	use std::io::Write;
 	let directory = directory.as_ref();
 	make_dirs(directory)?;
@@ -430,7 +446,7 @@ async fn download_package(
 	plain_no_eol!("Downloading [{}/{}] {}...", Paint::blue(index + 1).bold(), Paint::blue(total).bold(), Paint::cyan(&package.name));
 	if skip {
 		println!(" {}", Paint::yellow("up to date"));
-		return Ok(());
+		return Ok(false);
 	}
 	let mut file = std::fs::File::create(&pkg_path).map_err(|e| {
 		println!(" {}", Paint::red("failed"));
@@ -445,7 +461,7 @@ async fn download_package(
 		error!("Failed to write to {}: {}.", pkg_path.display(), e);
 	})?;
 	println!(" {}", Paint::green("done"));
-	Ok(())
+	Ok(true)
 }
 
 /// Get the URL of a package file.
@@ -458,36 +474,35 @@ fn package_url(repository: &Repository, package: &DatabasePackage) -> reqwest::U
 	pkg_url
 }
 
-/// Create a new repository database containing the selected packages.
-async fn create_database(
-	directory: &Path,
-	db_name: &str,
-	selected: &BTreeSet<&str>,
-	packages: &BTreeMap<&str, (&Repository, &DatabasePackage)>,
+/// Add packages to a database.
+async fn add_to_database(
+	db_path: &Path,
+	pkg_dir: &Path,
+	packages: &[(&Repository, &DatabasePackage)],
 ) -> Result<(), ()> {
-	let db_file_name = format!("{}.db.tar.zst", db_name);
-	let db_path = directory.join(&db_file_name);
-	remove_file(db_path)?;
-	make_dirs(directory)?;
+	if packages.is_empty() {
+		plain!("No packages to add.");
+		return Ok(());
+	}
 
-	for (i, pkg_name) in selected.iter().enumerate() {
+	if let Some(parent) = db_path.parent() {
+		make_dirs(parent)?;
+	}
+
+	for (i, (_repo, package)) in packages.iter().enumerate() {
 		if Paint::is_enabled() && i != 0 {
 			print!("\x1b[F"); // Go up one line.
-			plain_no_eol!("Processing package {}/{}.", i + 1, selected.len());
+			plain_no_eol!("Processing package {}/{}.", i + 1, packages.len());
 			print!("\x1b[K"); // Clear to end of line.
 			println!();
 		} else {
-			plain!("Processing package {}/{}.", i + 1, selected.len());
+			plain!("Processing package {}/{}.", i + 1, packages.len());
 		}
-		let (_repo, package) = packages
-			.get(pkg_name)
-			.unwrap_or_else(|| panic!("selected package list contains unknown package: {}", pkg_name));
 
 		let status = tokio::process::Command::new("repo-add")
 			.arg("-q")
-			.arg(&db_file_name)
-			.arg(&package.filename)
-			.current_dir(directory)
+			.arg(&db_path)
+			.arg(pkg_dir.join(&package.filename))
 			.stdin(std::process::Stdio::null())
 			.spawn()
 			.map_err(|e| error!("Failed to run repo-add: {}", e))?
