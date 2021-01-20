@@ -323,14 +323,18 @@ fn pop_first<T: Copy + Ord>(set: &mut BTreeSet<T>) -> Option<T> {
 
 /// Download and extract a database file.
 async fn download_database(http_client: &reqwest::Client, directory: &Path, url: &reqwest::Url) -> Result<(), ()> {
-	eprintln!("Downloading {}", url);
+	eprint!("Downloading {}...", url);
 	let last_modified_path = directory.join("last-modified");
 	let etag_path = directory.join("etag");
 	let last_modified = std::fs::read_to_string(&last_modified_path).ok();
 	let etag = std::fs::read_to_string(&etag_path).ok();
 
-	let download = maybe_download(http_client, &url, last_modified.as_deref(), etag.as_deref()).await.map_err(|e| eprintln!("Error: {}", e))?;
+	let download = maybe_download(http_client, &url, last_modified.as_deref(), etag.as_deref())
+		.await
+		.map_err(|e| eprintln!(" failed\nError: {}", e))?;
+
 	if let Some(download) = download {
+		eprintln!(" OK");
 		let _: Result<_, _> = std::fs::remove_file(&last_modified_path);
 		let _: Result<_, _> = std::fs::remove_file(&etag_path);
 		extract_archive(&directory, &download.data).await?;
@@ -340,6 +344,8 @@ async fn download_database(http_client: &reqwest::Client, directory: &Path, url:
 		if let Some(etag) = download.etag {
 			let _: Result<_, _> = std::fs::write(&etag_path, etag);
 		}
+	} else {
+		eprintln!(" up to date");
 	}
 	Ok(())
 }
@@ -375,15 +381,20 @@ async fn download_package(http_client: &reqwest::Client, directory: impl AsRef<P
 		} else if !file_sha256(&pkg_path)?.eq_ignore_ascii_case(&package.sha256sum) {
 			eprintln!("Warning: sha256 checksum of {} does not match, re-downloading package", package.filename);
 		} else {
+			eprintln!("Downloading {}... up to date", package.filename);
 			return Ok(())
 		}
 	}
 
-	let mut file = std::fs::File::create(&pkg_path).map_err(|e| eprintln!("Error: failed to open {} for writing: {}", pkg_path.display(), e))?;
-	eprintln!("Downloading {}", package.filename);
-	let data = download(http_client, &pkg_url).await.map_err(|e| eprintln!("Error: {}", e))?;
+	eprint!("Downloading {}...", package.filename);
+	let mut file = std::fs::File::create(&pkg_path)
+		.map_err(|e| eprintln!(" failed\nError: failed to open {} for writing: {}", pkg_path.display(), e))?;
+	let data = download(http_client, &pkg_url)
+		.await
+		.map_err(|e| eprintln!(" failed\nError: {}", e))?;
 	file.write_all(&data)
-		.map_err(|e| eprintln!("Error: failed to write to {}: {}", pkg_path.display(), e))?;
+		.map_err(|e| eprintln!(" failed\nError: failed to write to {}: {}", pkg_path.display(), e))?;
+	eprintln!(" OK");
 	Ok(())
 }
 
